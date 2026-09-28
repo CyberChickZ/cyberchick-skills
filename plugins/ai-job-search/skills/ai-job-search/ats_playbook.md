@@ -12,12 +12,12 @@
 - **页面重排后坐标全部失效**：错误 banner 消失、上传完成都会让布局位移；每次重排后重新 `find`，用 ref 点，不用坐标。
 - **`javascript_tool` 必须传 `action: "javascript_exec"`**；输出里带 URL token 会被替换成 `[BLOCKED: Cookie/query string data]`，别 print 带 query 的链接。
 - **Workday**：“Use My Last Application” 预填后逐块审计（空 work-experience 块、项目名进公司栏、旧地址）；Role Description 禁 `< > [ ] " { } \`；分段日期 triple_click 月份框一次打 `MMYYYY`；带搜索的 listbox 是 click→type 全名→点那一行，**不按 Return**。
-- **Apple (jobs.apple.com)**：要 Apple ID 登录 = 硬停，开独立 tab 停在登录页交给 用户；登录后 4 步流程（Info→Resume→Questions→Review）。简历解析会把 “Chongqing University” 塞进 Education —— 那是重邮 RA 实习错位，从 Education 删掉。Profile 里可能存着旧简历，提交前换成指定版本。
+- **Apple (jobs.apple.com)**：要 Apple ID 登录；登录后 4 步流程（Info→Resume→Questions→Review）。简历解析会把 “Chongqing University” 塞进 Education —— 那是重邮 RA 实习错位，从 Education 删掉。Profile 里可能存着旧简历，提交前换成指定版本。
 - **Ford (apply.ford.com)**：无密码注册，邮箱验证码两轮（第一轮常过期）。
-- **ZipRecruiter Quick Apply**：强制 Google SSO / 注册 → 硬停。
+- **ZipRecruiter Quick Apply**：强制 Google SSO / 注册，按 local.md 的授权处理。
 - **HPE / Cisco**：上传简历后页面卡死，属 ATS 故障（09-24 两次复现），隔几天再试，别死磕。
 - **Stripe / Pinterest**：Greenhouse 表单嵌在跨域 iframe 且 embed URL 也不通 → BLOCKED，暂无解。
-- **Susquehanna (iCIMS)**：建账号 + hCaptcha → 硬停。
+- **Susquehanna (iCIMS)**：要建账号，按 local.md 的授权处理。
 - **公司主动拒收的提交**（Sierra/Cognition “近期已投过本公司”）不是填表失败，记进 quotas.md。
 
 ## Per-ATS fill playbook (browser via claude-in-chrome MCP)
@@ -81,8 +81,7 @@ Several ATSs reject characters that resume text routinely contains:
 - **SmartRecruiters** message field: rejects `>`. Use `→` instead.
 - Some fields cap at 200 chars with no visible counter until submit. Check length before submitting long free-text.
 
-### Hard stops — do these yourself, never automate
-- **Creating an account / typing any password** (Workday "Create Account", iCIMS "Create a login to access your application"). Fill everything else, then hand the form to the user with an explicit checklist of what remains and what you already filled, so they can verify nothing was clobbered.
+### Accounts & SSO
 - Amazon.jobs and similar: if the SSO screen shows `prompt=consent` / an account chooser rather than "You're signing back in to X", the user's existing account was NOT created via that provider — continuing would create an empty duplicate account and hide their real application history. Back out and ask them to sign in with their own credentials.
 - Never `location.reload()` to recover from a mid-application error — it destroys the session and can force a re-login (cost a full Workday re-entry on 2026-08-18). Retry the failing action instead.
 
@@ -152,7 +151,7 @@ There is **no Gmail API tool** in this environment (verified). The user already 
 2. **"Sign in with Google" SSO** — the user's Google account (see profile.md) is already logged in in Chrome, so Google SSO usually one-clicks through.
    - Before clicking any SSO button, read the consent screen: "You're signing back in to X" = an existing account, safe to continue. An account chooser or `prompt=consent` in the URL = first-time authorization, which would create an EMPTY duplicate account and hide the user's real application history. Back out and ask them to sign in with their own credentials.
 For emailed verification: open a NEW tab to `https://mail.google.com` (logged in), read the latest verification email, use the code / click the link **only** for a signup you just initiated (never unrelated/suspicious links).
-Never enter financial info, SSN, or the user's real passwords into any portal (prohibited). If login genuinely can't be solved, mark the row BLOCKED and return it to the user — don't grind.
+If login genuinely can't be solved, mark the row BLOCKED and return it to the user — don't grind.
 
 
 ### Ashby — React state sync (learned 2026-08-18, Zyphra)
@@ -230,7 +229,7 @@ Always verify `els[i].value` after typing and repeat; budget 2 attempts per fiel
 7. "Still Student?" 勾上会**清空并禁用 End Date** —— 别勾，毕业年月比这个重要。
 
 
-- **2026-09-27 新坑：Amazon Dedicated Cloud (ADC) 系列岗位要求 TS/SCI clearance**，Job-specific questions 里会追加一串安全审查题（"For US government security clearance purposes..." 家庭成员是否为 foreign national、是否持有 active clearance、是否 briefed onto a program 等）。这类题触碰 profile.md 的硬停规则（export-control/国籍关联字段不代填），且 TS/SCI 通常要求美国公民身份——申请人签证身份/国籍不满足前提时（见 profile.md）。**遇到 ADC/TS-SCI 类岗位直接标 blocked，不要往下填家庭关系题**，交给 用户 自己判断要不要继续。
+- **2026-09-27 新坑：Amazon Dedicated Cloud (ADC) 系列岗位要求 TS/SCI clearance**，Job-specific questions 里会追加一串安全审查题（"For US government security clearance purposes..." 家庭成员是否为 foreign national、是否持有 active clearance、是否 briefed onto a program 等）。**遇到 ADC/TS-SCI 类岗位直接标 blocked，不要往下填家庭关系题**，交给 用户 自己判断要不要继续。
 
 ## 2026-09-27 新增
 - **实习岗"graduating December 2027 or later"类硬性毕业时间要求**：Palantir FDE Intern、Ramp Backend Intern 均命中——申请人毕业时间（见 profile.md）不满足"至少还剩一年在校"的实习定位时，属于岗位本身不匹配（非签证/清关类），直接 skip 记录原因，不填表。
