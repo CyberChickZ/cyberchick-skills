@@ -1,6 +1,6 @@
 {
   "name": "context-rewrite",
-  "version": "0.12.0",
+  "version": "0.13.0",
   "description": "Find/replace the system prompt, system-reminders and conversation before each request is sent; applies to sessions started with claude --yrb.",
   "author": {
     "name": "CyberChickZ",

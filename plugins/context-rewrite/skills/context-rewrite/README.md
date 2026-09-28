@@ -47,6 +47,11 @@ In the session:
 - Thinking blocks are signed and never modified; tool call arguments are never modified either
 - Output language: English by default; Chinese when Claude Code's `language` setting (or the system language) is Chinese. Force it with `CTXRW_LANG=zh|en`
 
+### Autocomplete
+Every subcommand is also its own command, so typing `/context-rewrite:` lists them all with descriptions:
+`/context-rewrite:install`, `:auto`, `:add`, `:capture`, `:list`, `:rm`, `:toggle`, `:scope`, `:on`, `:off`, `:status`, `:doctor`, `:restore`, `:snapshots`, `:snapshot`, `:uninstall`.
+`/context-rewrite:capture` is the same as `/context-rewrite capture`. Short names such as `/capture` work too, except `status`, `doctor` and `help`, which Claude Code already uses — type the full name for those.
+
 ### auto: describe the change, paste the text in `{braces}`
 ```
 /context-rewrite auto delete from {- Entering financial credentials, bank/card/…} to {- Downloading or executing files from untrusted sources}

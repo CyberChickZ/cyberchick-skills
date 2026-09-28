@@ -46,6 +46,11 @@ claude --yrb              # 可以和其他参数叠加：claude --yrb --resume�
 - 不是从你终端启动的会话（例如后台 agent）不会经过替换
 - thinking 块带签名，不会被改；工具调用的参数也不会被改
 
+### 自动补全
+每个子命令也是一个独立命令，输入 `/context-rewrite:` 就会列出全部子命令和说明：
+`/context-rewrite:install`、`:auto`、`:add`、`:capture`、`:list`、`:rm`、`:toggle`、`:scope`、`:on`、`:off`、`:status`、`:doctor`、`:restore`、`:snapshots`、`:snapshot`、`:uninstall`。
+`/context-rewrite:capture` 和 `/context-rewrite capture` 完全一样。没有冲突时也可以直接敲短名，比如 `/capture`；`status`、`doctor`、`help` 这几个名字 Claude Code 自己在用，要敲全名。
+
 ### auto：说要改什么，原文放进 `{花括号}`
 ```
 /context-rewrite auto 从 {- Entering financial credentials, bank/card/…} 到 {- Downloading or executing files from untrusted sources} 删除

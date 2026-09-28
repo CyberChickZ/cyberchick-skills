@@ -168,6 +168,8 @@ ACTION = {"name": ""}
 
 COMMANDS = {"snapshot", "snapshots", "restore", "doctor", "on", "off", "status", "list", "add", "add-json", "auto", "rm", "toggle", "scope", "start", "install", "capture", "uninstall", "hook", "ui"}
 SCOPES = ("system", "user", "assistant", "tools")
+SUBCOMMAND_SKILLS = {"install", "uninstall", "auto", "add", "capture", "list", "rm", "toggle", "scope", "on", "off",
+                     "status", "doctor", "restore", "snapshots", "snapshot"}
 SCOPE_DESC = {"system": "system prompt",
               "user": L("user messages, system-reminders, tool results", "用户消息、system-reminder、工具结果"),
               "assistant": L("the model's earlier replies", "模型之前的回复"),
@@ -643,14 +645,26 @@ def hook():
     event = inp.get("hook_event_name")
     if event == "UserPromptSubmit":
         prompt = (inp.get("prompt") or "").strip()
-        m = re.match(r"^/(?:context-rewrite:)?context-rewrite(?:\s+(.*))?$", prompt, re.S)
+        m = re.match(r"^/context-rewrite(?::([\w-]+))?(?:\s+(.*))?$", prompt, re.S)
         if not m:
             return
-        raw = m.group(1) or ""
+        name, rest = m.group(1), m.group(2) or ""
     elif event == "UserPromptExpansion":
-        if inp.get("command_name") not in ("context-rewrite", "context-rewrite:context-rewrite"):
+        cmd_name = inp.get("command_name") or ""
+        if cmd_name == "context-rewrite":
+            name = None
+        elif cmd_name.startswith("context-rewrite:"):
+            name = cmd_name.split(":", 1)[1]
+        else:
             return
-        raw = inp.get("command_args") or ""
+        rest = inp.get("command_args") or ""
+    else:
+        return
+    # /context-rewrite:<sub> is the same as /context-rewrite <sub> (one skill per subcommand, for autocomplete)
+    if name in (None, "context-rewrite"):
+        raw = rest
+    elif name in SUBCOMMAND_SKILLS:
+        raw = f"{name} {rest}".strip()
     else:
         return
     os.environ["CTXRW_SESSION_ID"] = inp.get("session_id", "")
