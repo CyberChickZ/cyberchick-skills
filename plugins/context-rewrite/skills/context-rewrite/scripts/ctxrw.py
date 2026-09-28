@@ -92,8 +92,9 @@ Snapshots (taken automatically before rules or rc files change; the last 30 are 
 AI-written rules
   auto <instruction with {text}>  copy the exact text into {braces}; the script keeps it verbatim (line breaks, quotes,
                                markdown, bullets are forgiven), only the rest goes to Claude (sonnet, low) for a regex skeleton;
-                               Python assembles it, checks it against the last request and adds the rule with a preview.
+                               Python assembles it and adds the rule.
                                e.g. auto delete from {- Entering financial credentials} to {untrusted sources}
+                               Adds the rule directly; auto --check first verifies it against the last request and shows a preview.
 
 Find the original text
   capture                      show the system prompt and injected content actually sent in the last request (before rewriting), and save it to a file
@@ -136,8 +137,8 @@ Commands that open a menu need Claude to show it, which costs one model call."""
 
 AI 编写
   auto <带 {原文} 的指令>        原文放进 {花括号}，脚本逐字保留（换行、引号、markdown、列表符号都能容错），
-                               只把其余的话交给 Claude（sonnet, low）要一个正则骨架；Python 拼好后拿上一次请求核对，
-                               命中才加规则，并给出改前/改后预览。例: auto 从 {- Entering financial credentials} 到 {untrusted sources} 删除
+                               只把其余的话交给 Claude（sonnet, low）要一个正则骨架，Python 拼好后加规则。例: auto 从 {- Entering financial credentials} 到 {untrusted sources} 删除
+                               默认直接加规则；auto --check 会先拿上一次请求核对并给出预览。
 
 找原文
   capture                      显示上一次实际发出去的 system prompt 和注入内容（替换前），并存成文件
@@ -886,6 +887,10 @@ def parse_spec(reply):
 def auto_rule(desc):
     """/context-rewrite auto: literal text goes in {braces} and is copied verbatim by the script; only the
     remaining instruction goes to the LLM, which returns a regex skeleton; Python assembles and applies it."""
+    check = False
+    m = re.match(r"\s*--check\b\s*(.*)$", desc, re.S)
+    if m:
+        check, desc = True, m.group(1)
     literals = [unwrap(x) for x in re.findall(r"\{(.*?)\}", desc, re.S)]
     if not literals:
         sys.exit(L("Put the exact text in {braces}; the script copies it verbatim and only the rest goes to the model. E.g.\n"
@@ -899,6 +904,9 @@ def auto_rule(desc):
     except ValueError:
         sys.exit(L("One of the {…} snippets is empty.", "有一个 {…} 是空的。"))
 
+    if check and not fetch_snapshot():
+        sys.exit(L("✗ --check needs a record of the last request: start claude with --yrb and send a message first",
+                   "✗ --check 需要上一次请求的记录：先用 --yrb 启动 claude 并发一句话"))
     print(L(f"Instruction sent to the model: {template}", f"交给模型的指令：{template}"))
     spec, err = None, None
     for _ in range(2):
@@ -916,8 +924,11 @@ def auto_rule(desc):
     used = {int(x) for x in ph.findall(pattern_t) if int(x) < len(literals)}
     if not used:
         sys.exit(L(f"✗ the model's pattern uses no placeholder: {pattern_t!r}", f"✗ 模型给的正则没用到任何占位符: {pattern_t!r}"))
-    res = fetch_snapshot()
+    res = fetch_snapshot() if check else None
     corpus = None
+    if check and not res:
+        sys.exit(L("✗ --check needs a record of the last request: start claude with --yrb and send a message first",
+                   "✗ --check 需要上一次请求的记录：先用 --yrb 启动 claude 并发一句话"))
     if res:
         snap = res["snapshot"]
         corpus = snapshot_corpus(snap)
@@ -991,7 +1002,8 @@ def auto_rule(desc):
         print(L(f"✓ added rule #{n}; in the last request it matches " + ", ".join(f"{k} {v}" for k, v in where.items() if v),
                 f"✓ 已添加规则 #{n}，在上一次请求里命中 " + "，".join(f"{k} {v} 处" for k, v in where.items() if v)))
     else:
-        print(L(f"✓ added rule #{n} (couldn't verify: no record of the last request)", f"✓ 已添加规则 #{n}（无法核对：没有上一次请求的记录）"))
+        print(L(f"✓ added rule #{n} (not checked against the last request; use auto --check to verify and preview)",
+                f"✓ 已添加规则 #{n}（没有核对原文；想核对并预览就用 auto --check）"))
     if corpus is not None:
         src = next(v for v in corpus.values() if rx.search(v))
         m = rx.search(src)
