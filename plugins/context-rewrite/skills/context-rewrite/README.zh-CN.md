@@ -48,7 +48,7 @@ claude --yrb              # 可以和其他参数叠加：claude --yrb --resume�
 
 ### 自动补全
 每个子命令也是一个独立命令，输入 `/context-rewrite:` 就会列出全部子命令和说明：
-`/context-rewrite:install`、`:auto`、`:add`、`:capture`、`:list`、`:rm`、`:toggle`、`:scope`、`:on`、`:off`、`:status`、`:doctor`、`:restore`、`:snapshots`、`:snapshot`、`:uninstall`。
+`/context-rewrite:install`、`:auto`、`:autowoc`、`:add`、`:capture`、`:list`、`:rm`、`:toggle`、`:scope`、`:on`、`:off`、`:status`、`:doctor`、`:restore`、`:snapshots`、`:snapshot`、`:uninstall`。
 `/context-rewrite:capture` 和 `/context-rewrite capture` 完全一样。没有冲突时也可以直接敲短名，比如 `/capture`；`status`、`doctor`、`help` 这几个名字 Claude Code 自己在用，要敲全名。
 
 ### auto：说要改什么，原文放进 `{花括号}`
@@ -59,7 +59,7 @@ claude --yrb              # 可以和其他参数叠加：claude --yrb --resume�
 1. 脚本把每个 `{…}` 里的原文逐字取出（不经过模型，不会抄错）。
 2. 只把剩下的指令（「从 {0} 到 {1} 删除」）交给 Claude（sonnet、low effort、不给工具），拿回一个正则骨架，比如 `{0}[\s\S]*?{1}\n?`。
 3. Python 把占位符换成原文的容错正则：换行 / 缩进 / 终端折行、弯直引号、各种横线、`…` 和 `...`、丢失或多出的 markdown（`**`、`` ` ``、`_`、`#`、`>`）、列表符号和编号、终端的 `│ ⎿` 前缀、Read 工具的行号，都能对上。
-4. 默认先拿上一次完整请求（system、全部消息、工具描述）核对：命中才加，范围自动设成命中的位置，并给出改前/改后预览。写成 `auto --no-check …` 就不核对直接加（不需要 --yrb 会话）。替换内容里的 `{i}` 写回的是原文实际匹配到的文字，不是你粘贴的那份。
+4. 默认先拿上一次完整请求（system、全部消息、工具描述）核对：命中才加，范围自动设成命中的位置，并给出改前/改后预览。写成 `auto --no-check …` 或 `autowoc …` 就不核对直接加（不需要 --yrb 会话）。替换内容里的 `{i}` 写回的是原文实际匹配到的文字，不是你粘贴的那份。
 5. 整个过程在 hook 里完成，不进对话历史。每次的记录存在 `~/.claude/context-rewrite/auto/`。
 
 「从 A 到 B」默认连 A 和 B 一起删；只想删中间就说「保留两端」。

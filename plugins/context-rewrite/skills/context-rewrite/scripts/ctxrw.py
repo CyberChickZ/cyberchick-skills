@@ -94,7 +94,7 @@ AI-written rules
                                markdown, bullets are forgiven), only the rest goes to Claude (sonnet, low) for a regex skeleton;
                                Python assembles it and adds the rule.
                                e.g. auto delete from {- Entering financial credentials} to {untrusted sources}
-                               By default it is checked against the whole last request first (added only if it matches, with a before/after preview); auto --no-check adds it without checking.
+                               By default it is checked against the whole last request first (added only if it matches, with a before/after preview); auto --no-check (or autowoc) adds it without checking.
 
 Find the original text
   capture                      show the system prompt and injected content actually sent in the last request (before rewriting), and save it to a file
@@ -138,7 +138,7 @@ Commands that open a menu need Claude to show it, which costs one model call."""
 AI 编写
   auto <带 {原文} 的指令>        原文放进 {花括号}，脚本逐字保留（换行、引号、markdown、列表符号都能容错），
                                只把其余的话交给 Claude（sonnet, low）要一个正则骨架，Python 拼好后加规则。例: auto 从 {- Entering financial credentials} 到 {untrusted sources} 删除
-                               默认先拿上一次完整请求核对（命中才加，并给出改前/改后预览）；auto --no-check 不核对直接加。
+                               默认先拿上一次完整请求核对（命中才加，并给出改前/改后预览）；auto --no-check（或 autowoc）不核对直接加。
 
 找原文
   capture                      显示上一次实际发出去的 system prompt 和注入内容（替换前），并存成文件
@@ -166,9 +166,9 @@ SNAP_DIR = os.path.join(HOME, "snapshots")
 SNAP_KEEP = 30
 ACTION = {"name": ""}
 
-COMMANDS = {"snapshot", "snapshots", "restore", "doctor", "on", "off", "status", "list", "add", "add-json", "auto", "rm", "toggle", "scope", "start", "install", "capture", "uninstall", "hook", "ui"}
+COMMANDS = {"autowoc", "snapshot", "snapshots", "restore", "doctor", "on", "off", "status", "list", "add", "add-json", "auto", "rm", "toggle", "scope", "start", "install", "capture", "uninstall", "hook", "ui"}
 SCOPES = ("system", "user", "assistant", "tools")
-SUBCOMMAND_SKILLS = {"install", "uninstall", "auto", "add", "capture", "list", "rm", "toggle", "scope", "on", "off",
+SUBCOMMAND_SKILLS = {"install", "uninstall", "auto", "autowoc", "add", "capture", "list", "rm", "toggle", "scope", "on", "off",
                      "status", "doctor", "restore", "snapshots", "snapshot"}
 SCOPE_DESC = {"system": "system prompt",
               "user": L("user messages, system-reminders, tool results", "用户消息、system-reminder、工具结果"),
@@ -623,9 +623,12 @@ def capture():
 def parse_args(raw):
     """`auto` takes free text (quotes, apostrophes, <>, newlines) verbatim; everything else is shell-like."""
     import shlex
-    m = re.match(r"\s*auto(?:\s+(.*))?$", raw, re.S)
+    m = re.match(r"\s*(auto|autowoc)(?:\s+(.*))?$", raw, re.S)
     if m:
-        return ["auto"] + ([m.group(1).strip()] if m.group(1) and m.group(1).strip() else [])
+        rest = (m.group(2) or "").strip()
+        if m.group(1) == "autowoc":
+            rest = ("--no-check " + rest).strip()
+        return ["auto"] + ([rest] if rest else [])
     return shlex.split(raw)
 
 
@@ -919,8 +922,8 @@ def auto_rule(desc):
         sys.exit(L("One of the {…} snippets is empty.", "有一个 {…} 是空的。"))
 
     if check and not fetch_snapshot():
-        sys.exit(L("✗ checking needs a record of the last request: start claude with --yrb and send a message first, or use auto --no-check to add the rule without checking",
-                   "✗ 核对需要上一次请求的记录：先用 --yrb 启动 claude 并发一句话；或者用 auto --no-check 不核对直接加"))
+        sys.exit(L("✗ checking needs a record of the last request: start claude with --yrb and send a message first, or use autowoc (auto --no-check) to add the rule without checking",
+                   "✗ 核对需要上一次请求的记录：先用 --yrb 启动 claude 并发一句话；或者用 autowoc（auto --no-check）不核对直接加"))
     print(L(f"Instruction sent to the model: {template}", f"交给模型的指令：{template}"))
     spec, err = None, None
     for _ in range(2):
@@ -941,8 +944,8 @@ def auto_rule(desc):
     res = fetch_snapshot() if check else None
     corpus = None
     if check and not res:
-        sys.exit(L("✗ checking needs a record of the last request: start claude with --yrb and send a message first, or use auto --no-check to add the rule without checking",
-                   "✗ 核对需要上一次请求的记录：先用 --yrb 启动 claude 并发一句话；或者用 auto --no-check 不核对直接加"))
+        sys.exit(L("✗ checking needs a record of the last request: start claude with --yrb and send a message first, or use autowoc (auto --no-check) to add the rule without checking",
+                   "✗ 核对需要上一次请求的记录：先用 --yrb 启动 claude 并发一句话；或者用 autowoc（auto --no-check）不核对直接加"))
     if res:
         snap = res["snapshot"]
         corpus = snapshot_corpus(snap)
@@ -1389,6 +1392,8 @@ def main(argv):
         warn(cfg)
     elif cmd == "auto":
         auto_rule(" ".join(args))
+    elif cmd == "autowoc":
+        auto_rule(("--no-check " + " ".join(args)).strip())
     elif cmd == "add":
         pos, opts, i = [], {}, 0
         while i < len(args):

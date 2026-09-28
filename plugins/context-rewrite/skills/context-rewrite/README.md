@@ -49,7 +49,7 @@ In the session:
 
 ### Autocomplete
 Every subcommand is also its own command, so typing `/context-rewrite:` lists them all with descriptions:
-`/context-rewrite:install`, `:auto`, `:add`, `:capture`, `:list`, `:rm`, `:toggle`, `:scope`, `:on`, `:off`, `:status`, `:doctor`, `:restore`, `:snapshots`, `:snapshot`, `:uninstall`.
+`/context-rewrite:install`, `:auto`, `:autowoc`, `:add`, `:capture`, `:list`, `:rm`, `:toggle`, `:scope`, `:on`, `:off`, `:status`, `:doctor`, `:restore`, `:snapshots`, `:snapshot`, `:uninstall`.
 `/context-rewrite:capture` is the same as `/context-rewrite capture`. Short names such as `/capture` work too, except `status`, `doctor` and `help`, which Claude Code already uses — type the full name for those.
 
 ### auto: describe the change, paste the text in `{braces}`
@@ -60,7 +60,7 @@ Every subcommand is also its own command, so typing `/context-rewrite:` lists th
 1. The script pulls the text out of each `{…}` verbatim (it never goes through the model, so it can't be mistyped).
 2. Only the remaining instruction (`delete from {0} to {1}`) goes to Claude (sonnet, low effort, no tools), which returns a regex skeleton such as `{0}[\s\S]*?{1}\n?`.
 3. Python substitutes each placeholder with a forgiving regex for the pasted text: line breaks / indentation / terminal wrapping, curly vs straight quotes, dash variants, `…` vs `...`, lost or extra markdown (`**`, `` ` ``, `_`, `#`, `>`), list bullets and numbering, terminal `│ ⎿` prefixes and Read-tool line numbers are all ignored.
-4. By default it is checked against the whole last request (system, all messages, tool descriptions): added only if it matches, scope set to where it matched, with a before/after preview. `auto --no-check …` adds it without checking (no --yrb session needed). `{i}` in the replacement re-inserts the original matched text, not your pasted copy.
+4. By default it is checked against the whole last request (system, all messages, tool descriptions): added only if it matches, scope set to where it matched, with a before/after preview. `auto --no-check …` or `autowoc …` adds it without checking (no --yrb session needed). `{i}` in the replacement re-inserts the original matched text, not your pasted copy.
 5. Everything runs inside the hook, so nothing enters the conversation. Each run is logged to `~/.claude/context-rewrite/auto/`.
 
 "From A to B" deletes the whole section including A and B; say "keep both ends" to delete only what's between.
