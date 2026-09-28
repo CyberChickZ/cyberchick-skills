@@ -1,0 +1,39 @@
+{
+  "description": "context-rewrite：拦下 /context-rewrite 直接执行（不进上下文、不调用模型）；checkpoint：上下文压缩后自动重载项目 memory",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/skills/context-rewrite/scripts/ctxrw.py\" hook",
+            "timeout": 90
+          }
+        ]
+      }
+    ],
+    "UserPromptExpansion": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/skills/context-rewrite/scripts/ctxrw.py\" hook",
+            "timeout": 90
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/checkpoint/recall-hook.sh\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

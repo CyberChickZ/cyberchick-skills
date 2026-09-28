@@ -1,0 +1,31 @@
+{
+  "jobdir": "~/git/job-search",
+  "resume_repo": "~/git/resume",
+  "resume_out": "~/Downloads/Resume{suffix}.pdf",
+  "resume_variants": {
+    "default": "resume:"
+  },
+  "filters": {
+    "skip": {
+      "<company-slug>": "原因，比如冷却期到某日"
+    },
+    "hard_flags": [],
+    "soft_flags": [],
+    "grad_late_years": [],
+    "junior_years": [],
+    "location_allow": null,
+    "location_deny": null,
+    "amazon_country": "USA",
+    "amazon_queries": [
+      "software development engineer new grad",
+      "sde intern"
+    ],
+    "track_order": [
+      "FDE",
+      "Robotics",
+      "MLE",
+      "SDE"
+    ],
+    "notes": {}
+  }
+}

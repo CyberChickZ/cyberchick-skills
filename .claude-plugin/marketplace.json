@@ -1,0 +1,22 @@
+{
+  "name": "cyberchick-skills",
+  "description": "CyberChickZ's Claude Code skills and hooks.",
+  "owner": {
+    "name": "CyberChickZ",
+    "url": "https://github.com/CyberChickZ"
+  },
+  "plugins": [
+    {
+      "name": "cyberchick-skills",
+      "source": "./plugins/cyberchick-skills",
+      "version": "0.6.0",
+      "description": "工具集：/context-rewrite、/ai-job-search、/council、/xiaohongshu、/checkpoint-save|read|review|reload"
+    },
+    {
+      "name": "cyberchick-hooks",
+      "source": "./plugins/cyberchick-hooks",
+      "version": "0.1.0",
+      "description": "个人 hooks：tool-ledger（记录输入和工具调用到 /tmp）、caffeinate（会话期间防休眠）"
+    }
+  ]
+}

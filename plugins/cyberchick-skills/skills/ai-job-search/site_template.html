@@ -1,0 +1,191 @@
+<title>2026 求职战况</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root{
+  --bg:#F3F5F8; --surface:#FFFFFF; --surface-2:#F8F9FB; --ink:#161A20; --ink-2:#5B6472; --ink-3:#8A93A1;
+  --line:#DDE2E9; --accent:#2F5BD3;
+  --s-submitted:#5C6E9A; --s-interview:#B86E00; --s-interview-bg:#FFF3DC; --s-offer:#1E8A4A;
+  --s-rejected:#B0473C; --s-queued:#6E56C2; --s-skipped:#9AA0A9; --s-blocked:#C75A12; --s-withdrawn:#9AA0A9;
+  --sans:"IBM Plex Sans","PingFang SC","Hiragino Sans GB","Noto Sans SC",system-ui,sans-serif;
+  --cond:"IBM Plex Sans Condensed","IBM Plex Sans","PingFang SC",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  color-scheme:dark; --bg:#0E1116; --surface:#161B22; --surface-2:#1B212A; --ink:#E7EAF0; --ink-2:#A0A9B6; --ink-3:#6E7886;
+  --line:#28303B; --accent:#7FA0FF;
+  --s-submitted:#8FA0CC; --s-interview:#F0A63A; --s-interview-bg:#2E2413; --s-offer:#4CC47F;
+  --s-rejected:#E07A6F; --s-queued:#A690F0; --s-skipped:#6E7886; --s-blocked:#F08A45; --s-withdrawn:#6E7886;
+}}
+:root[data-theme="dark"]{
+  color-scheme:dark; --bg:#0E1116; --surface:#161B22; --surface-2:#1B212A; --ink:#E7EAF0; --ink-2:#A0A9B6; --ink-3:#6E7886;
+  --line:#28303B; --accent:#7FA0FF;
+  --s-submitted:#8FA0CC; --s-interview:#F0A63A; --s-interview-bg:#2E2413; --s-offer:#4CC47F;
+  --s-rejected:#E07A6F; --s-queued:#A690F0; --s-skipped:#6E7886; --s-blocked:#F08A45; --s-withdrawn:#6E7886;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font:14px/1.55 var(--sans);margin:0}
+.wrap{max-width:1120px;margin:0 auto;padding-inline:16px;padding-block:28px 64px;display:grid;gap:28px}
+h1{font:600 30px/1.15 var(--cond);letter-spacing:-.01em;margin:0;text-wrap:balance}
+h2{font:600 13px/1 var(--cond);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2);margin:0 0 12px}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+header p{margin:6px 0 0;color:var(--ink-2)}
+header .meta{font:12px var(--mono);color:var(--ink-3);margin-top:4px}
+
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:18px}
+.pipe{display:grid;gap:10px;grid-template-columns:repeat(auto-fill,minmax(250px,1fr))}
+.card{background:var(--s-interview-bg);border-radius:8px;padding:12px 14px;display:grid;gap:4px;border:1px solid color-mix(in srgb,var(--s-interview) 30%,transparent)}
+.card b{font:600 15px var(--cond)}
+.card .r{color:var(--ink-2);font-size:13px}
+.card .n{font-size:12.5px;color:var(--ink)}
+.card .d{font:11.5px var(--mono);color:var(--ink-3)}
+
+.funnel{display:flex;height:34px;border-radius:6px;overflow:hidden;background:var(--surface-2)}
+.funnel span{display:block;height:100%}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:10px;font-size:12.5px;color:var(--ink-2)}
+.legend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:6px;vertical-align:0}
+.legend .num{color:var(--ink);margin-left:4px}
+
+.two{display:grid;gap:16px;grid-template-columns:1.4fr 1fr}
+@media (max-width:760px){.two{grid-template-columns:1fr}}
+svg text{fill:var(--ink-3);font:10.5px var(--mono)}
+.bars{display:grid;gap:7px}
+.bar{display:grid;grid-template-columns:72px 1fr 40px;align-items:center;gap:8px;font-size:12.5px}
+.bar .t{height:10px;border-radius:3px;background:var(--surface-2);overflow:hidden}
+.bar .t span{display:block;height:100%;background:var(--accent)}
+.bar .num{text-align:right;color:var(--ink-2)}
+
+.tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
+.chip{border:1px solid var(--line);background:var(--surface);color:var(--ink-2);border-radius:999px;padding:4px 11px;font:12.5px var(--sans);cursor:pointer}
+.chip[aria-pressed="true"]{border-color:var(--ink);color:var(--ink);background:var(--surface-2);font-weight:600}
+.chip:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+#q{flex:1 1 200px;min-width:0;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:6px;padding:6px 10px;font:13px var(--sans)}
+.tbl{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px;min-width:720px}
+th{font:600 11.5px var(--cond);letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+td.d{font:12px var(--mono);color:var(--ink-3);white-space:nowrap}
+td a{color:var(--accent);text-decoration:none}
+td a:hover{text-decoration:underline}
+td .note{color:var(--ink-3);font-size:12px;margin-top:2px}
+.st{display:inline-block;font:500 11.5px var(--sans);padding:1px 8px;border-radius:999px;white-space:nowrap;color:var(--st);border:1px solid color-mix(in srgb,var(--st) 45%,transparent)}
+.trk{font:11.5px var(--mono);color:var(--ink-2)}
+.more{margin-top:10px;font-size:12.5px;color:var(--ink-3)}
+.q-row td:first-child{white-space:nowrap}
+.flag{font:11px var(--mono);color:var(--s-blocked)}
+@media (prefers-reduced-motion:no-preference){.funnel span{transition:flex-basis .4s}}
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>2026 求职战况</h1>
+    <p id="lede"></p>
+    <div class="meta" id="meta"></div>
+  </header>
+
+  <section>
+    <h2>进行中 · 面试 / 测评 / take-home</h2>
+    <div class="pipe" id="pipe"></div>
+  </section>
+
+  <section class="panel">
+    <h2>全部申请的去向</h2>
+    <div class="funnel" id="funnel"></div>
+    <div class="legend" id="legend"></div>
+  </section>
+
+  <div class="two">
+    <section class="panel">
+      <h2>每周投递</h2>
+      <div id="weekly"></div>
+    </section>
+    <section class="panel">
+      <h2>方向</h2>
+      <div class="bars" id="tracks"></div>
+    </section>
+  </div>
+
+  <section class="panel" id="queueSec">
+    <h2 id="queueTitle">今日待投</h2>
+    <div class="tbl"><table><thead><tr><th>方向</th><th>公司</th><th>岗位</th><th>地点</th><th>发布</th><th>提示</th></tr></thead><tbody id="queue"></tbody></table></div>
+  </section>
+
+  <section class="panel">
+    <h2>所有申请</h2>
+    <div class="tools">
+      <input id="q" type="search" placeholder="搜公司 / 岗位 / 备注" aria-label="搜索">
+      <div id="chips" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+    </div>
+    <div class="tbl"><table><thead><tr><th>更新</th><th>公司</th><th>岗位</th><th>方向</th><th>状态</th></tr></thead><tbody id="rows"></tbody></table></div>
+    <div class="more" id="count"></div>
+  </section>
+</div>
+
+<script>
+const DATA = /*__DATA__*/{"apps":[],"queue":[],"generated":""};
+const S = {
+  interview:["面试中","--s-interview"], offer:["Offer","--s-offer"], submitted:["已投待回","--s-submitted"],
+  rejected:["已拒","--s-rejected"], queued:["排队","--s-queued"], blocked:["卡住","--s-blocked"],
+  skipped:["跳过","--s-skipped"], withdrawn:["撤回","--s-withdrawn"]
+};
+const ORDER = ["offer","interview","submitted","rejected","blocked","queued","skipped","withdrawn"];
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const apps = DATA.apps;
+const cnt = s => apps.filter(a => a.status === s).length;
+const sent = apps.filter(a => ["submitted","rejected","interview","offer"].includes(a.status));
+
+$("lede").textContent = `已投 ${sent.length} 份，${cnt("interview")} 家在面试流程里，${cnt("rejected")} 封拒信，${cnt("offer")} 个 offer。`;
+$("meta").textContent = `数据更新于 ${DATA.generated} · 来源 applications.csv`;
+
+const pipe = apps.filter(a => a.status === "interview" || a.status === "offer").sort((a,b) => (b.last_update||"").localeCompare(a.last_update||""));
+$("pipe").innerHTML = pipe.length ? pipe.map(a => `<div class="card"><b>${esc(a.company)}</b><span class="r">${esc(a.role)}</span><span class="n">${esc(a.notes)}</span><span class="d">最近动态 ${esc(a.last_update||"—")}</span></div>`).join("") : `<p style="color:var(--ink-3)">暂时没有进行中的流程。</p>`;
+
+const tot = apps.length;
+$("funnel").innerHTML = ORDER.filter(cnt).map(s => `<span title="${S[s][0]} ${cnt(s)}" style="flex-basis:${cnt(s)/tot*100}%;background:var(${S[s][1]})"></span>`).join("");
+$("legend").innerHTML = ORDER.filter(cnt).map(s => `<span><i style="background:var(${S[s][1]})"></i>${S[s][0]}<span class="num">${cnt(s)}</span></span>`).join("");
+
+(function weekly(){
+  const wk = d => { const t = new Date(d+"T00:00:00"); const day = (t.getDay()+6)%7; t.setDate(t.getDate()-day); return t.toISOString().slice(0,10); };
+  const m = {}; sent.forEach(a => { if (a.applied_date) { const k = wk(a.applied_date); m[k] = (m[k]||0)+1; } });
+  const keys = Object.keys(m).sort().slice(-12);
+  if (!keys.length) { $("weekly").textContent = "没有带日期的投递。"; return; }
+  const max = Math.max(...keys.map(k => m[k])), W = 520, H = 150, pl = 26, pb = 22, bw = (W-pl)/keys.length;
+  const y = v => H-pb - v/max*(H-pb-12);
+  let g = "";
+  [0, Math.round(max/2), max].forEach(v => { g += `<line x1="${pl}" x2="${W}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/><text x="0" y="${y(v)+3}">${v}</text>`; });
+  keys.forEach((k,i) => {
+    const x = pl + i*bw + 3, last = i === keys.length-1;
+    g += `<rect x="${x}" y="${y(m[k])}" width="${bw-6}" height="${H-pb-y(m[k])}" rx="2" fill="${last ? "var(--accent)" : "color-mix(in srgb, var(--accent) 45%, var(--surface))"}"/>`;
+    if (m[k] === max || last) g += `<text x="${x+(bw-6)/2}" y="${y(m[k])-4}" text-anchor="middle" style="fill:var(--ink)">${m[k]}</text>`;
+    if (i % 2 === 0 || last) g += `<text x="${x+(bw-6)/2}" y="${H-6}" text-anchor="middle">${k.slice(5)}</text>`;
+  });
+  $("weekly").innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="最近 12 周每周投递数">${g}</svg>`;
+})();
+
+(function tracks(){
+  const m = {}; sent.forEach(a => m[a.track||"Other"] = (m[a.track||"Other"]||0)+1);
+  const ks = Object.keys(m).sort((a,b) => m[b]-m[a]), max = Math.max(...ks.map(k => m[k]), 1);
+  $("tracks").innerHTML = ks.map(k => `<div class="bar"><span>${esc(k)}</span><span class="t"><span style="width:${m[k]/max*100}%"></span></span><span class="num">${m[k]}</span></div>`).join("");
+})();
+
+if (DATA.queue.length) {
+  $("queueTitle").textContent = `今日待投 · ${DATA.queue_date} · ${DATA.queue.length} 个`;
+  $("queue").innerHTML = DATA.queue.slice(0,40).map(p => `<tr class="q-row"><td class="trk">${esc(p.track)}</td><td>${esc(p.company)}</td><td><a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.title)}</a></td><td>${esc((p.location||"").slice(0,36))}</td><td class="d">${esc(p.posted)}</td><td class="flag">${esc((p.flags||[]).filter(f=>f!=="sponsor_ok").join(" "))}${(p.flags||[]).includes("sponsor_ok")?'<span style="color:var(--s-offer)">可 sponsor</span>':""}</td></tr>`).join("");
+} else { $("queueSec").hidden = true; }
+
+let filt = "active", term = "";
+const FILTERS = [["active","进行中+待回"],["all","全部"],...ORDER.map(s => [s, S[s][0]])];
+$("chips").innerHTML = FILTERS.filter(([k]) => k==="all"||k==="active"||cnt(k)).map(([k,l]) => `<button class="chip" id="f-${k}" data-k="${k}" aria-pressed="${k===filt}">${l}</button>`).join("");
+$("chips").addEventListener("click", e => { const b = e.target.closest(".chip"); if (!b) return; filt = b.dataset.k; document.querySelectorAll(".chip").forEach(c => c.setAttribute("aria-pressed", c===b)); render(); });
+$("q").addEventListener("input", e => { term = e.target.value.trim().toLowerCase(); render(); });
+function render(){
+  const rows = apps.filter(a => filt==="all" ? true : filt==="active" ? ["interview","offer","submitted"].includes(a.status) : a.status===filt)
+    .filter(a => !term || `${a.company} ${a.role} ${a.notes} ${a.track}`.toLowerCase().includes(term))
+    .sort((a,b) => (b.last_update||b.applied_date||"").localeCompare(a.last_update||a.applied_date||""));
+  $("rows").innerHTML = rows.slice(0,300).map(a => `<tr><td class="d">${esc(a.last_update||a.applied_date||"—")}</td><td>${esc(a.company)}</td><td>${a.link?`<a href="${esc(a.link.startsWith("http")?a.link:"https://"+a.link)}" target="_blank" rel="noopener">${esc(a.role)}</a>`:esc(a.role)}${a.notes?`<div class="note">${esc(a.notes)}</div>`:""}</td><td class="trk">${esc(a.track)}</td><td><span class="st" style="--st:var(${S[a.status]?.[1]||"--ink-3"})">${S[a.status]?.[0]||esc(a.status)}</span></td></tr>`).join("");
+  $("count").textContent = `显示 ${Math.min(rows.length,300)} / ${rows.length} 条`;
+}
+render();
+</script>

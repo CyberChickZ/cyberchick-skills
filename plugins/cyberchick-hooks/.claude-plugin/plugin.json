@@ -1,0 +1,6 @@
+{
+  "name": "cyberchick-hooks",
+  "version": "0.1.0",
+  "description": "CyberChickZ 的个人 hooks：tool-ledger（把输入、工具调用、会话起止记到 /tmp/claude_tool_ledger.log）；caffeinate（会话期间阻止 Mac 休眠）。",
+  "author": { "name": "CyberChickZ", "url": "https://github.com/CyberChickZ" }
+}

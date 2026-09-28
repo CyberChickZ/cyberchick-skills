@@ -1,0 +1,67 @@
+{
+  "description": "tool-ledger + caffeinate",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "PID_FILE=/tmp/claude_caffeinate_$PPID.pid; nohup caffeinate -di </dev/null >/dev/null 2>&1 & echo $! > \"$PID_FILE\"; disown 2>/dev/null; true"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "PID_FILE=/tmp/claude_caffeinate_$PPID.pid; [ -f \"$PID_FILE\" ] && kill $(cat \"$PID_FILE\") 2>/dev/null; rm -f \"$PID_FILE\""
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/tool-ledger.py\""
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/tool-ledger.py\""
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/tool-ledger.py\""
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/tool-ledger.py\""
+          }
+        ]
+      }
+    ]
+  }
+}
