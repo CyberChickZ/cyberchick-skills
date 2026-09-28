@@ -1,6 +1,6 @@
 # context-rewrite
 
-`cyberchick-skills` 插件里的一个工具。命令：`/context-rewrite`（菜单里显示为 `/cyberchick-skills:context-rewrite`）；启动参数：`claude --yrb`。
+[cyberchick-skills](../../../../README.md) 里的一个插件，可以单独安装。命令：`/context-rewrite`（菜单里显示为 `/context-rewrite:context-rewrite`）；启动参数：`claude --yrb`。
 
 Claude Code 每次请求都会带上一些自动注入的内容，比如默认 system prompt 和 `<system-reminder>`。其中有些行为可能不符合团队要求。这个插件可以在请求发出前对这些内容做 find/replace。
 
@@ -11,7 +11,7 @@ Claude Code 每次请求都会带上一些自动注入的内容，比如默认 s
 在任意 claude 对话里：
 ```
 /plugin marketplace add CyberChickZ/cyberchick-skills
-/plugin install cyberchick-skills@cyberchick-skills
+/plugin install context-rewrite@cyberchick-skills
 /context-rewrite install
 ```
 装好插件就有 `/context-rewrite` 命令。`install` 会在 `~/.zshrc` 末尾挂上 `--yrb`（如果存在 `~/.bashrc` 也会加），并把脚本放到 `~/.claude/context-rewrite/`。可以重复执行，rc 里永远只有一段。
@@ -70,7 +70,7 @@ claude --yrb              # 可以和其他参数叠加：claude --yrb --resume�
 - 终端里可以直接执行：`python3 ~/.claude/context-rewrite/ctxrw.py restore`（或 `off`、`doctor`）
 
 ## 卸载
-`/context-rewrite uninstall` 会依次：移除 rc 里的 `--yrb`（其余内容原样保留）、停止 proxy、删除 `~/.claude/context-rewrite`（规则、快照、日志、脚本）。cyberchick-skills 插件本身保留，因为里面可能还有别的工具；要连插件一起删：`claude plugin uninstall cyberchick-skills@cyberchick-skills`。可以重复执行。
+`/context-rewrite uninstall` 会依次：移除 rc 里的 `--yrb`（其余内容原样保留）、停止 proxy、删除 `~/.claude/context-rewrite`（规则、快照、日志、脚本）。context-rewrite 插件本身也会一起卸掉；cyberchick-skills marketplace 保留，因为里面还有别的工具。可以重复执行。
 普通会话不受影响。正在运行的 `--yrb` 会话因为 proxy 已停，需要退出后用普通方式重开（`claude --continue`）。
 
 ## 原理

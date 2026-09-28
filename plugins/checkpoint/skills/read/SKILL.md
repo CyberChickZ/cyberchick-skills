@@ -1,6 +1,6 @@
 ---
-name: checkpoint-read
-description: "RAG-style memory recall — analyze current conversation topics and load only relevant memories from project memory. Scores each memory by relevance, reads full content of matches, skips unrelated ones. Triggers on: '/checkpoint-read', 'recall memory', 'load context', 'checkpoint read', 'what do I have saved'."
+name: read
+description: "RAG-style memory recall — analyze current conversation topics and load only relevant memories from project memory. Scores each memory by relevance, reads full content of matches, skips unrelated ones. Triggers on: '/checkpoint:read', 'recall memory', 'load context', 'checkpoint read', 'what do I have saved'."
 license: MIT
 ---
 
@@ -27,7 +27,7 @@ RAG-style memory recall — load only memories relevant to the current conversat
 
 5. The loaded content is now in context. Use it to inform subsequent responses without user needing to point to specific files.
 
-If NO memories are relevant, say so and suggest `/checkpoint-save` if there are save-worthy findings in the current conversation.
+If NO memories are relevant, say so and suggest `/checkpoint:save` if there are save-worthy findings in the current conversation.
 
 ## Rules
 

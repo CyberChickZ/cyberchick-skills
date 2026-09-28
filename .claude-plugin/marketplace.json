@@ -1,16 +1,40 @@
 {
   "name": "cyberchick-skills",
-  "description": "CyberChickZ's Claude Code skills and hooks.",
+  "description": "CyberChickZ's Claude Code skills and hooks. Install only what you need.",
   "owner": {
     "name": "CyberChickZ",
     "url": "https://github.com/CyberChickZ"
   },
   "plugins": [
     {
-      "name": "cyberchick-skills",
-      "source": "./plugins/cyberchick-skills",
-      "version": "0.6.0",
-      "description": "工具集：/context-rewrite、/ai-job-search、/council、/xiaohongshu、/checkpoint-save|read|review|reload"
+      "name": "context-rewrite",
+      "source": "./plugins/context-rewrite",
+      "version": "0.7.0",
+      "description": "发送请求前，对 system prompt、system-reminder 和对话内容做 find/replace；用 claude --yrb 启动的会话生效。"
+    },
+    {
+      "name": "ai-job-search",
+      "source": "./plugins/ai-job-search",
+      "version": "1.0.0",
+      "description": "全自动求职流水线：拉岗、预筛、选简历、派子代理填表、清邮箱、刷新看板。个人资料放本机 ~/.claude/cyberchick-skills/ai-job-search/。"
+    },
+    {
+      "name": "council",
+      "source": "./plugins/council",
+      "version": "1.0.0",
+      "description": "研究决策的 AI 盲审，防附和。"
+    },
+    {
+      "name": "xiaohongshu",
+      "source": "./plugins/xiaohongshu",
+      "version": "1.0.0",
+      "description": "小红书笔记、搜索、评论抓取和视频转录（依赖本机 Spider_XHS，路径用 XHS_HOME 指定）。"
+    },
+    {
+      "name": "checkpoint",
+      "source": "./plugins/checkpoint",
+      "version": "1.2.0",
+      "description": "Memory checkpoint：把对话里的结论存进项目 memory、按需召回，上下文压缩后自动重载。"
     },
     {
       "name": "cyberchick-hooks",

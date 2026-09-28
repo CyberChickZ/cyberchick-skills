@@ -208,10 +208,6 @@ def installed():
         os.path.exists(rc) and RC_BLOCK in open(rc).read() for rc in target_rcs())
 
 
-def plugin_installed():
-    return bool(installed_plugin_entries())
-
-
 def stale_files():
     return [n for n in FILES if not os.path.exists(os.path.join(HOME, n)) or
             (os.path.join(SRC, n) != os.path.join(HOME, n) and open(os.path.join(SRC, n), "rb").read() != open(os.path.join(HOME, n), "rb").read())]
@@ -239,6 +235,8 @@ def install():
         changed = True
     for f in failed:
         print(f"✗ {f}")
+    if bundle_installed():
+        print(f"⚠ 旧的合集插件 {BUNDLE} 还装着，会重复拦截 /context-rewrite。执行: claude plugin uninstall {BUNDLE}")
     for rc in target_rcs():
         text = open(rc).read() if os.path.exists(rc) else ""
         if RC_BLOCK in text:
@@ -323,13 +321,18 @@ def strip_rc(rc):
     return True
 
 
-def installed_plugin_entries(name):
+LEGACY_PLUGINS = {"context-rewrite@context-rewrite"}
+LEGACY_MARKETPLACES = {"context-rewrite"}
+BUNDLE = "cyberchick-skills@cyberchick-skills"
+
+
+def installed_plugin_entries(match):
     try:
         with open(os.path.join(PLUGINS_DIR, "installed_plugins.json")) as f:
             plugins = json.load(f).get("plugins", {})
     except (FileNotFoundError, json.JSONDecodeError):
         return []
-    return [(key, e) for key, entries in plugins.items() if key.split("@")[0] == name for e in entries]
+    return [(key, e) for key, entries in plugins.items() if match(key) for e in entries]
 
 
 def has_marketplace(name):
@@ -340,14 +343,13 @@ def has_marketplace(name):
         return False
 
 
-def migrate_legacy():
-    """旧版叫 context-rewrite 插件（命令 /context-rewrite:yrb）。它的 hook 会和新版同时拦截命令，必须卸掉。返回 (已处理, 失败)。"""
+def remove_plugins(match, label, marketplaces=()):
+    """按完整 key 卸载插件（和旧 marketplace）。返回 (已处理, 失败)。"""
     done, failed = [], []
     claude = shutil.which("claude") or "claude"
-    cmds = [([claude, "plugin", "uninstall", key, "--scope", e.get("scope", "user"), "-y"], e.get("projectPath"), f"旧插件 {key}")
-            for key, e in installed_plugin_entries("context-rewrite")]
-    if has_marketplace("context-rewrite"):
-        cmds.append(([claude, "plugin", "marketplace", "remove", "context-rewrite"], None, "旧 marketplace context-rewrite"))
+    cmds = [([claude, "plugin", "uninstall", key, "--scope", e.get("scope", "user"), "-y"], e.get("projectPath"), f"{label} {key}")
+            for key, e in installed_plugin_entries(match)]
+    cmds += [([claude, "plugin", "marketplace", "remove", m], None, f"旧 marketplace {m}") for m in marketplaces if has_marketplace(m)]
     for cmd, cwd, label in cmds:
         try:
             r = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd or None, timeout=60)
@@ -357,6 +359,16 @@ def migrate_legacy():
         except Exception as ex:
             failed.append(f"{label}: {ex}；手动执行 {' '.join(cmd)}")
     return done, failed
+
+
+def migrate_legacy():
+    """旧版插件 context-rewrite@context-rewrite（命令 /context-rewrite:yrb）的 hook 会和新版同时拦截命令，必须卸掉。"""
+    return remove_plugins(lambda k: k in LEGACY_PLUGINS, "旧插件", LEGACY_MARKETPLACES)
+
+
+def bundle_installed():
+    """0.5–0.6 版把所有工具装在一个 cyberchick-skills 插件里，它也带着 context-rewrite 的 hook，会重复拦截。"""
+    return bool(installed_plugin_entries(lambda k: k == BUNDLE))
 
 
 def uninstall():
@@ -380,7 +392,7 @@ def uninstall():
         os.remove(legacy_plist)
         print("✓ 已移除旧版 launchd 常驻")
 
-    done, failed = migrate_legacy()
+    done, failed = remove_plugins(lambda k: k.split("@")[0] == "context-rewrite", "插件", LEGACY_MARKETPLACES)
     for d in done:
         print(f"✓ 已卸载{d}")
     for f in failed:
@@ -402,8 +414,7 @@ def uninstall():
         print("当前这个会话是 --yrb 启动的，proxy 已停，接下来发消息会连不上。退出后用普通方式重开即可：claude --continue")
         print("其他 --yrb 会话同理需要重开；普通会话不受任何影响。")
     print("已经开着的终端里 claude 函数还在内存中，但会自动退回普通启动；新开的终端里就彻底没有了。")
-    print("cyberchick-skills 插件本身还在（里面可能还有别的工具），/context-rewrite 命令还能用来重新 install。")
-    print("连插件一起删：claude plugin uninstall cyberchick-skills@cyberchick-skills")
+    print("cyberchick-skills marketplace 保留（里面还有别的工具）；要重新装：/plugin install context-rewrite@cyberchick-skills")
 
 
 def fetch_snapshot():
@@ -471,12 +482,12 @@ def hook():
     event = inp.get("hook_event_name")
     if event == "UserPromptSubmit":
         prompt = (inp.get("prompt") or "").strip()
-        m = re.match(r"^/(?:cyberchick-skills:)?context-rewrite(?:\s+(.*))?$", prompt, re.S)
+        m = re.match(r"^/(?:context-rewrite:)?context-rewrite(?:\s+(.*))?$", prompt, re.S)
         if not m:
             return
         raw = m.group(1) or ""
     elif event == "UserPromptExpansion":
-        if inp.get("command_name") not in ("context-rewrite", "cyberchick-skills:context-rewrite"):
+        if inp.get("command_name") not in ("context-rewrite", "context-rewrite:context-rewrite"):
             return
         raw = inp.get("command_args") or ""
     else:
@@ -703,9 +714,12 @@ def doctor():
     clash = os.path.join(os.path.dirname(USER_SKILL), "context-rewrite", "SKILL.md")
     if os.path.exists(clash):
         fail(f"{os.path.dirname(clash)} 是另一个同名 skill，敲 /context-rewrite 会运行它而不是本插件",
-             "改用全名 /cyberchick-skills:context-rewrite，或者把那个 skill 改名")
+             "改用全名 /context-rewrite:context-rewrite，或者把那个 skill 改名")
     else:
-        ok("/context-rewrite 命令由 cyberchick-skills 插件提供")
+        ok("/context-rewrite 命令由 context-rewrite 插件提供")
+    if bundle_installed():
+        fail(f"旧的合集插件 {BUNDLE} 还装着，它也会拦截 /context-rewrite（重复执行）",
+             f"claude plugin uninstall {BUNDLE}，再按需装单个插件：/plugin install <名字>@cyberchick-skills")
 
     print("\n[规则]")
     try:

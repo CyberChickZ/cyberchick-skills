@@ -1,6 +1,6 @@
 ---
-name: checkpoint-reload
-description: "Manually trigger full memory reload — same as what happens automatically after compact. Reads ALL project memory files into context. Use when you want to force-load all saved memories without waiting for compaction. Triggers on: '/checkpoint-reload', 'reload memory', 'load all memories', 'full memory load'."
+name: reload
+description: "Manually trigger full memory reload — same as what happens automatically after compact. Reads ALL project memory files into context. Use when you want to force-load all saved memories without waiting for compaction. Triggers on: '/checkpoint:reload', 'reload memory', 'load all memories', 'full memory load'."
 license: MIT
 ---
 

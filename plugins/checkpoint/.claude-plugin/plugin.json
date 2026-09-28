@@ -1,0 +1,10 @@
+{
+  "name": "checkpoint",
+  "version": "1.2.0",
+  "description": "Memory checkpoint：把对话里的结论存进项目 memory、按需召回，上下文压缩后自动重载。",
+  "author": {
+    "name": "CyberChickZ",
+    "url": "https://github.com/CyberChickZ"
+  },
+  "license": "MIT"
+}

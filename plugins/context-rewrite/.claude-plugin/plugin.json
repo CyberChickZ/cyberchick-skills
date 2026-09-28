@@ -1,0 +1,9 @@
+{
+  "name": "context-rewrite",
+  "version": "0.7.0",
+  "description": "发送请求前，对 system prompt、system-reminder 和对话内容做 find/replace；用 claude --yrb 启动的会话生效。",
+  "author": {
+    "name": "CyberChickZ",
+    "url": "https://github.com/CyberChickZ"
+  }
+}

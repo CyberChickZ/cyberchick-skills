@@ -1,0 +1,9 @@
+{
+  "name": "council",
+  "version": "1.0.0",
+  "description": "研究决策的 AI 盲审，防附和。",
+  "author": {
+    "name": "CyberChickZ",
+    "url": "https://github.com/CyberChickZ"
+  }
+}

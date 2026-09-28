@@ -1,0 +1,9 @@
+{
+  "name": "xiaohongshu",
+  "version": "1.0.0",
+  "description": "小红书笔记、搜索、评论抓取和视频转录（依赖本机 Spider_XHS，路径用 XHS_HOME 指定）。",
+  "author": {
+    "name": "CyberChickZ",
+    "url": "https://github.com/CyberChickZ"
+  }
+}

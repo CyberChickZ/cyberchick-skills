@@ -1,9 +1,0 @@
-{
-  "name": "cyberchick-skills",
-  "version": "0.6.0",
-  "description": "CyberChickZ 的 Claude Code 工具集：context-rewrite、ai-job-search、council、xiaohongshu、checkpoint。",
-  "author": {
-    "name": "CyberChickZ",
-    "url": "https://github.com/CyberChickZ"
-  }
-}

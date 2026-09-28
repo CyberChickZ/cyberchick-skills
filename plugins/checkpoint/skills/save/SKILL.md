@@ -1,6 +1,6 @@
 ---
-name: checkpoint-save
-description: "Extract key findings from conversation and persist to project memory. Deduplicates against existing memories, writes with proper frontmatter, updates MEMORY.md index. Use before context compaction or when important decisions/findings should be preserved. Triggers on: '/checkpoint-save', 'save memory', 'persist findings', 'checkpoint save'."
+name: save
+description: "Extract key findings from conversation and persist to project memory. Deduplicates against existing memories, writes with proper frontmatter, updates MEMORY.md index. Use before context compaction or when important decisions/findings should be preserved. Triggers on: '/checkpoint:save', 'save memory', 'persist findings', 'checkpoint save'."
 license: MIT
 ---
 

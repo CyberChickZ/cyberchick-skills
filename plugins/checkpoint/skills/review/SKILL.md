@@ -1,6 +1,6 @@
 ---
-name: checkpoint-review
-description: "Extract memory candidates from conversation and present for user approval before writing. Shows a numbered table of proposed memories with type, filename, summary, and action. Nothing is written until user confirms. Triggers on: '/checkpoint-review', 'review memory', 'check memory', 'checkpoint review'."
+name: review
+description: "Extract memory candidates from conversation and present for user approval before writing. Shows a numbered table of proposed memories with type, filename, summary, and action. Nothing is written until user confirms. Triggers on: '/checkpoint:review', 'review memory', 'check memory', 'checkpoint review'."
 license: MIT
 ---
 
@@ -10,7 +10,7 @@ Scan the conversation and show candidates for memory persistence. Do NOT write a
 
 ## Instructions
 
-1. **Extract**: Same as `/checkpoint-save` — scan for findings, decisions, insights.
+1. **Extract**: Same as `/checkpoint:save` — scan for findings, decisions, insights.
 
 2. **Deduplicate**: Read `~/.claude/projects/{current-project}/memory/MEMORY.md`. Filter out already recorded items.
 
@@ -36,4 +36,4 @@ Scan the conversation and show candidates for memory persistence. Do NOT write a
 
 - NEVER write memory files before user confirms
 - Show enough detail in summary for user to judge relevance
-- Same exclusion rules as `/checkpoint-save`
+- Same exclusion rules as `/checkpoint:save`

@@ -1,0 +1,17 @@
+{
+  "description": "上下文压缩后自动重载项目 memory",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/recall-hook.sh\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}
