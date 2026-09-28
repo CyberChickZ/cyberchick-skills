@@ -74,7 +74,7 @@ USAGE = L("""/context-rewrite — find/replace the system prompt, system-reminde
 
 Quick start
   1. /context-rewrite install                set up claude --yrb, then run claude --yrb --continue in a new terminal tab
-  2. /context-rewrite auto <description>     say what to change in one sentence and Claude writes the rule; or /context-rewrite capture to see the original text and write it yourself
+  2. /context-rewrite auto 从 {原文A} 到 {原文B} 删除   put copied text in {braces}; or /context-rewrite capture to see the original text first
   3. /context-rewrite list                   show rules; /context-rewrite off to pause; if anything breaks, run /context-rewrite doctor
 
 Setup
@@ -90,7 +90,10 @@ Snapshots (taken automatically before rules or rc files change; the last 30 are 
   help                         show this help
 
 AI-written rules
-  auto <description>           describe the change in one sentence; Claude (sonnet, low) finds the original text, drafts rules, and adds the ones you tick
+  auto <instruction with {text}>  copy the exact text into {braces}; the script keeps it verbatim (line breaks, quotes,
+                               markdown, bullets are forgiven), only the rest goes to Claude (sonnet, low) for a regex skeleton;
+                               Python assembles it, checks it against the last request and adds the rule with a preview.
+                               e.g. auto delete from {- Entering financial credentials} to {untrusted sources}
 
 Find the original text
   capture                      show the system prompt and injected content actually sent in the last request (before rewriting), and save it to a file
@@ -116,7 +119,7 @@ Commands that open a menu need Claude to show it, which costs one model call."""
 
 快速开始
   1. /context-rewrite install                装上 claude --yrb，然后新开终端 tab 执行 claude --yrb --continue
-  2. /context-rewrite auto <描述>            用一句话说想改什么，Claude 帮你写规则；或者 /context-rewrite capture 看原文后自己写
+  2. /context-rewrite auto 从 {原文A} 到 {原文B} 删除   把复制的原文放进 {花括号}；也可以先 /context-rewrite capture 看原文
   3. /context-rewrite list                   看规则；/context-rewrite off 临时关掉；出问题先跑 /context-rewrite doctor
 
 安装
@@ -132,7 +135,9 @@ Commands that open a menu need Claude to show it, which costs one model call."""
   help                         显示这份说明
 
 AI 编写
-  auto <描述>                  用一句话描述想改什么，由 Claude（sonnet, low）找原文、写规则，勾选确认后写入
+  auto <带 {原文} 的指令>        原文放进 {花括号}，脚本逐字保留（换行、引号、markdown、列表符号都能容错），
+                               只把其余的话交给 Claude（sonnet, low）要一个正则骨架；Python 拼好后拿上一次请求核对，
+                               命中才加规则，并给出改前/改后预览。例: auto 从 {- Entering financial credentials} 到 {untrusted sources} 删除
 
 找原文
   capture                      显示上一次实际发出去的 system prompt 和注入内容（替换前），并存成文件
@@ -669,8 +674,6 @@ def needs_ui(argv):
         return len(args) < 2 and bool(load()["rules"])
     if cmd == "add":
         return bare_scope(args)
-    if cmd == "auto":
-        return bool(args)
     return False
 
 
@@ -726,10 +729,6 @@ def ui(argv):
             out.append(f"({len(rules) - 16} more rules not listed; tell the user they can type /context-rewrite {cmd} <n> directly)")
         return out
 
-    if cmd == "auto":
-        auto_prompt(" ".join(args), me, rules)
-        return
-
     scope_opts = [f"  label: \"{s}\"  description: \"{SCOPE_DESC[s]}\"" for s in SCOPES]
     if cmd in ("rm", "toggle"):
         verb = "delete" if cmd == "rm" else "enable / disable (selected rules flip state)"
@@ -752,37 +751,229 @@ def ui(argv):
     print("\n".join(lines))
 
 
-def auto_prompt(desc, me, rules):
+AUTO_PROMPT = """You convert a text-editing instruction into a Python regex template.
+The user's literal text snippets have been replaced by placeholders {{0}}, {{1}}, ... ({n} placeholder(s) here).
+Each placeholder will later be substituted with an exact, whitespace-tolerant regex for that snippet, so never try to
+guess or spell out their content.
+
+Instruction: {template}
+
+Reply with ONE JSON object and nothing else:
+{{"pattern": "<Python re pattern using the placeholders>", "replace": "<replacement; may use placeholders and \\1-style group refs>", "ignore_case": false}}
+
+Guidance (line breaks matter: never glue two lines together):
+- "delete from {{0}} to {{1}}" / "从 {{0}} 到 {{1}} 删除" / "从 {{0}} 到 {{1}} 中间删除" -> the WHOLE section including both
+  snippets: pattern "{{0}}[\\s\\S]*?{{1}}\\n?", replace "". When unsure whether the endpoints are included, include them.
+- only when the instruction explicitly keeps the endpoints ("keep both", "保留两端", "只删中间"): pattern
+  "{{0}}\\n[\\s\\S]*?\\n(?={{1}})", replace "{{0}}\\n".
+- "replace {{0}} with {{1}}" -> pattern "{{0}}", replace "{{1}}".
+- "delete {{0}}" -> pattern "{{0}}\\n?", replace "".
+- In replace, {{i}} re-inserts the original text that {{i}} matched.
+"""
+
+
+def ask_llm(prompt):
+    """One-shot call to Claude (sonnet, low effort) with no tools, settings, plugins or hooks. Returns the reply text."""
+    env = {k: v for k, v in os.environ.items()
+           if k not in ("ANTHROPIC_BASE_URL", "CTXRW_YRB", "CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT")}
+    cmd = [shutil.which("claude") or "claude", "-p", prompt, "--model", "sonnet", "--tools", "",
+           "--output-format", "json", "--no-session-persistence", "--setting-sources", "",
+           "--settings", json.dumps({"effortLevel": "low"})]
+    r = subprocess.run(cmd, capture_output=True, text=True, timeout=80, env=env, stdin=subprocess.DEVNULL)
+    try:
+        d = json.loads(r.stdout)
+    except json.JSONDecodeError:
+        raise RuntimeError((r.stderr or r.stdout or "no output").strip()[:300])
+    if d.get("is_error"):
+        raise RuntimeError(str(d.get("result"))[:300])
+    return d.get("result") or ""
+
+
+QUOTE_S = "'‘’´′"
+QUOTE_D = '"“”″'
+DASHES = "-‐‑‒–—−"
+MARK = r"[*_`~]{0,3}"
+BULLET = r"(?:(?:[-*+•·▪◦]|\d{1,3}[.)])\s+)?"
+
+
+def _char_rx(c):
+    if c in QUOTE_S:
+        return "['‘’´′]"
+    if c in QUOTE_D:
+        return '["“”″]'
+    if c in DASHES:
+        return "[-‐‑‒–—−]"
+    if c == "…":
+        return r"(?:…|\.\.\.)"
+    return re.escape(c)
+
+
+def literal_regex(text):
+    """Regex for a pasted snippet that tolerates what copy/paste loses or changes: line breaks, indentation and
+    terminal wrapping; curly vs straight quotes; dash variants; … vs ...; markdown markers (** _ ` ~ #, >);
+    list bullets and numbering; terminal box-drawing prefixes and Read-tool line numbers."""
+    first = text.lstrip().splitlines()[0] if text.strip() else ""
+    has_prefix = bool(re.match(r"\s*(?:\d+(?:\t|→))?\s*(?:[│┃⎿▏]\s*)?(?:#{1,6}\s|>\s|[-*+•·▪◦]\s|\d{1,3}[.)]\s)", first))
+    lines = []
+    for line in text.splitlines():
+        line = re.sub(r"^\s*\d+(?:\t|→)", "", line)
+        line = re.sub(r"[│┃⎿▏]", " ", line)
+        line = re.sub(r"^\s*(?:#{1,6}|>)\s+", "", line)
+        line = re.sub(r"^\s*(?:[-*+•·▪◦]|\d{1,3}[.)])\s+", "", line)
+        lines.append(line)
+    t = re.sub(r"[*_`~]", "", " ".join(lines).replace("...", "…"))
+    toks = t.split()
+    if not toks:
+        raise ValueError("empty")
+    heading = r"(?:(?:#{1,6}|>)\s+)?"
+    parts = [MARK + MARK.join(_char_rx(c) for c in tok) + MARK for tok in toks]
+    # a leading bullet/heading marker is only part of the match if the pasted text started with one
+    lead = heading + BULLET if has_prefix else ""
+    return lead + (r"\s*" + heading + BULLET).join(parts)
+
+
+WRAP_QUOTES = "'\"‘’“”`「」『』"
+
+
+def unwrap(text):
+    """Drop one pair of quotes wrapped around a snippet: {'…'} {“…”} {‘…’}."""
+    t = text.strip()
+    while len(t) >= 2 and t[0] in WRAP_QUOTES and t[-1] in WRAP_QUOTES:
+        t = t[1:-1].strip()
+    return t
+
+
+def parse_spec(reply):
+    """Pull the JSON object out of the reply; tolerate regex backslashes the model forgot to escape (\\s → \\\\s)."""
+    m = re.search(r"\{.*\}", reply, re.S)
+    if not m:
+        raise ValueError(reply[:200])
+    raw = m.group(0)
+    try:
+        spec = json.loads(raw)
+    except json.JSONDecodeError:
+        spec = json.loads(re.sub(r'\\(?![\\/"bfnrtu])', r"\\\\", raw))
+    if not isinstance(spec.get("pattern"), str) or not spec["pattern"]:
+        raise ValueError("no pattern")
+    return spec
+
+
+def auto_rule(desc):
+    """/context-rewrite auto: literal text goes in {braces} and is copied verbatim by the script; only the
+    remaining instruction goes to the LLM, which returns a regex skeleton; Python assembles and applies it."""
+    literals = [unwrap(x) for x in re.findall(r"\{(.*?)\}", desc, re.S)]
+    if not literals:
+        sys.exit(L("Put the exact text in {braces}; the script copies it verbatim and only the rest goes to the model. E.g.\n"
+                   "  /context-rewrite auto delete from {- Entering financial credentials} to {untrusted sources}, across lines",
+                   "把原文放进 {花括号}：脚本逐字复制原文，只把其余的话交给模型。例如：\n"
+                   "  /context-rewrite auto 从 {- Entering financial credentials} 到 {untrusted sources} 中间删除，忽略换行"))
+    counter = iter(range(len(literals)))
+    template = re.sub(r"\{.*?\}", lambda m: "{" + str(next(counter)) + "}", desc, flags=re.S)
+    try:
+        lit_rx = [literal_regex(t) for t in literals]
+    except ValueError:
+        sys.exit(L("One of the {…} snippets is empty.", "有一个 {…} 是空的。"))
+
+    print(L(f"Instruction sent to the model: {template}", f"交给模型的指令：{template}"))
+    spec, err = None, None
+    for _ in range(2):
+        try:
+            spec = parse_spec(ask_llm(AUTO_PROMPT.format(n=len(literals), template=template)))
+            break
+        except Exception as e:
+            err = e
+    if not spec:
+        sys.exit(L(f"✗ the model didn't return a usable regex: {err}", f"✗ 模型没返回可用的正则: {err}"))
+    pattern_t = spec["pattern"]
+    replace_t = spec.get("replace", "")
+
+    ph = re.compile(r"\{(\d+)\}")
+    used = {int(x) for x in ph.findall(pattern_t) if int(x) < len(literals)}
+    if not used:
+        sys.exit(L(f"✗ the model's pattern uses no placeholder: {pattern_t!r}", f"✗ 模型给的正则没用到任何占位符: {pattern_t!r}"))
     res = fetch_snapshot()
-    cancelled = L("Cancelled.", "已取消")
-    lines = [
-        "[context-rewrite interactive · auto rule writing]",
-        f"User request: {desc}",
-        "",
-        "Task: based on the user's request, find the passages to change in the \"original text of the last request\" below and write replacement rules. Do nothing beyond the steps below; no explanations.",
-        "1. find must be copied verbatim from the original text (punctuation, spaces and line breaks must match); never write it from memory. Keep it short but unique.",
-        "2. To delete, set replace to the empty string \"\"; to reword, write the new text.",
-        "3. scope: if the text is in the SYSTEM PROMPT section use [\"system\"]; if it is in a user message or system-reminder use [\"user\"]; if it appears in both, omit scope.",
-        "4. Only use \"regex\": true when the original text appears in several variants.",
-        "5. Use AskUserQuestion to let the user tick which rules to add: multiSelect: true, one option per rule, labels \"Rule 1\", \"Rule 2\", …, "
-        "description \"find summary → replace summary\" (at most 40 characters each). At most 4 options per question; split into more questions if needed. If you can't find relevant text, say so; never invent it.",
-        ui_language_line(),
-        "6. Write the ticked rules as a JSON array (fields find / replace / scope / regex) and run with Bash:",
-        f"   {me} add-json <<'CTXRW_EOF'",
-        "   [{\"find\": \"...\", \"replace\": \"...\", \"scope\": [\"system\"]}]",
-        "   CTXRW_EOF",
-        f"7. Relay the command output to the user verbatim. If the user selects nothing, reply only \"{cancelled}\".",
-        "",
-        "Existing rules (rules already in effect make the text below appear rewritten):",
-    ]
-    lines += [f"  #{i} {rule_line(i, r)}" for i, r in enumerate(rules, 1)] or ["  (none)"]
-    lines.append("")
+    corpus = None
     if res:
-        lines += ["══════════ original text of the last request (before rewriting) ══════════", snapshot_text(res, english=True)]
+        snap = res["snapshot"]
+        corpus = {"system": "\n".join(snap["system"]),
+                  "user": "\n".join(t for _, ts in snap["messages"] for t in ts)}
+        missing = [i for i in sorted(used) if not any(re.search(lit_rx[i], v) for v in corpus.values())]
+        if missing:
+            print(L("✗ these snippets are not in the last request (check the copied text; /context-rewrite capture shows the original):",
+                    "✗ 这些原文在上一次请求里找不到（检查复制的文字；/context-rewrite capture 可以看原文）："))
+            for i in missing:
+                print(f"    {{{i}}} {literals[i][:80]!r}")
+            return
+
+    named = set()
+
+    def to_group(m):
+        i = int(m.group(1))
+        if i >= len(literals):
+            return m.group(0)
+        if i in named:
+            return f"(?:{lit_rx[i]})"
+        named.add(i)
+        return f"(?P<p{i}>{lit_rx[i]})"
+
+    pattern = ph.sub(to_group, pattern_t)
+    # {i} in the replacement re-inserts the ORIGINAL matched text (not the pasted copy, which may have lost formatting)
+    replace = ph.sub(lambda m: f"\\g<p{m.group(1)}>" if int(m.group(1)) in named
+                     else literals[int(m.group(1))].replace("\\", "\\\\") if int(m.group(1)) < len(literals) else m.group(0), replace_t)
+    flags = re.I if spec.get("ignore_case") else 0
+    try:
+        rx = re.compile(pattern, flags)
+        rx.sub(replace, "")
+    except re.error as e:
+        sys.exit(L(f"✗ assembled regex is invalid: {e}\n  {pattern[:200]}", f"✗ 拼出来的正则无效: {e}\n  {pattern[:200]}"))
+
+    rule = {"find": pattern, "replace": replace, "enabled": True, "regex": True,
+            "auto": {"description": desc, "template": pattern_t, "replace_template": replace_t}}
+    if spec.get("ignore_case"):
+        rule["ignore_case"] = True
+    if corpus is not None:
+        where = {k: len(rx.findall(v)) for k, v in corpus.items()}
+        if not sum(where.values()):
+            sys.exit(L(f"✗ every snippet exists, but the assembled regex matches nothing, so no rule was added.\n  skeleton from the model: {pattern_t}",
+                       f"✗ 原文都在，但拼出来的正则一处都没命中，没有添加规则。\n  模型给的骨架: {pattern_t}"))
+        hit_scopes = [k for k, v in where.items() if v]
+        if hit_scopes == ["system"]:
+            rule["scope"] = ["system"]
+        elif hit_scopes == ["user"]:
+            rule["scope"] = ["user"]
+
+    os.makedirs(os.path.join(HOME, "auto"), exist_ok=True)
+    with open(os.path.join(HOME, "auto", time.strftime("%Y%m%d-%H%M%S") + ".json"), "w") as f:
+        json.dump({"description": desc, "literals": literals, "template": template,
+                   "llm_pattern": pattern_t, "llm_replace": replace_t, "pattern": pattern, "replace": replace},
+                  f, ensure_ascii=False, indent=2)
+
+    cfg = load()
+    cfg["rules"].append(rule)
+    save(cfg)
+    n = len(cfg["rules"])
+    shown = pattern_t.replace("\n", "\\n")
+    print(L(f"Skeleton from the model: {shown}  →  {replace_t!r}", f"模型给的骨架: {shown}  →  {replace_t!r}"))
+    if corpus is not None:
+        print(L(f"✓ added rule #{n}; in the last request it matches " + ", ".join(f"{k} {v}" for k, v in where.items() if v),
+                f"✓ 已添加规则 #{n}，在上一次请求里命中 " + "，".join(f"{k} {v} 处" for k, v in where.items() if v)))
     else:
-        lines += ["(No original text available: this session wasn't started with --yrb, or hasn't sent a message yet. Use the system prompt and "
-                  "system-reminder text you can see in your own context; the result can't be verified when it is saved.)"]
-    print("\n".join(lines))
+        print(L(f"✓ added rule #{n} (couldn't verify: no record of the last request)", f"✓ 已添加规则 #{n}（无法核对：没有上一次请求的记录）"))
+    if corpus is not None:
+        src = next(v for v in corpus.values() if rx.search(v))
+        m = rx.search(src)
+        before = src[max(0, m.start() - 60):m.end() + 60]
+        after = src[max(0, m.start() - 60):m.start()] + m.expand(replace) + src[m.end():m.end() + 60]
+
+        def clip(t, n=500):
+            return t if len(t) <= n else t[:n // 2] + "\n   …\n" + t[-n // 2:]
+        bar = "─" * 40
+        print(L("Preview (first match, with 60 chars of context):", "预览（第一处命中，前后各带 60 个字符）："))
+        print(L("  before:", "  改前：") + f"\n{bar}\n{clip(before)}\n{bar}")
+        print(L("  after:", "  改后：") + f"\n{bar}\n{clip(after)}\n{bar}")
+    print(L(f"Takes effect from the next request. Not what you meant? /context-rewrite rm {n} and rephrase.",
+            f"下一次请求生效。理解错了就 /context-rewrite rm {n}，换个说法再来。"))
+    warn(cfg)
 
 
 def add_rules(new, cfg):
@@ -1038,7 +1229,14 @@ def show(cfg):
         if r.get("scope"):
             flags.append("scope=" + ",".join(r["scope"]))
         mark = "✓" if r.get("enabled", True) else "✗"
-        print(f"  {i}. [{mark}] {r['find']!r} → {r.get('replace', '')!r}" + (f"  ({' '.join(flags)})" if flags else ""))
+        if r.get("auto"):
+            label = f"auto: {r['auto']['description'][:70]!r}"
+            if len(r["auto"]["description"]) > 70:
+                label = label[:-1] + "…'"
+            print(f"  {i}. [{mark}] {label}" + (f"  ({' '.join(flags)})" if flags else ""))
+            continue
+        find = r["find"] if len(r["find"]) <= 80 else r["find"][:77] + "…"
+        print(f"  {i}. [{mark}] {find!r} → {r.get('replace', '')!r}" + (f"  ({' '.join(flags)})" if flags else ""))
 
 
 def warn(cfg):
@@ -1124,8 +1322,7 @@ def main(argv):
         show(cfg)
         warn(cfg)
     elif cmd == "auto":
-        sys.exit(L("Usage: /context-rewrite auto <describe the change in one sentence>, e.g. /context-rewrite auto remove every instruction to add Co-Authored-By",
-                   "用法: /context-rewrite auto <用一句话描述想改什么>，例如 /context-rewrite auto 去掉所有要求加 Co-Authored-By 的说明"))
+        auto_rule(" ".join(args))
     elif cmd == "add":
         pos, opts, i = [], {}, 0
         while i < len(args):

@@ -47,6 +47,19 @@ In the session:
 - Thinking blocks are signed and never modified; tool call arguments are never modified either
 - Output language: English by default; Chinese when Claude Code's `language` setting (or the system language) is Chinese. Force it with `CTXRW_LANG=zh|en`
 
+### auto: describe the change, paste the text in `{braces}`
+```
+/context-rewrite auto delete from {- Entering financial credentials, bank/card/…} to {- Downloading or executing files from untrusted sources}
+/context-rewrite auto replace {Creating accounts on the user's behalf} with {Creating accounts is fine}
+```
+1. The script pulls the text out of each `{…}` verbatim (it never goes through the model, so it can't be mistyped).
+2. Only the remaining instruction (`delete from {0} to {1}`) goes to Claude (sonnet, low effort, no tools), which returns a regex skeleton such as `{0}[\s\S]*?{1}\n?`.
+3. Python substitutes each placeholder with a forgiving regex for the pasted text: line breaks / indentation / terminal wrapping, curly vs straight quotes, dash variants, `…` vs `...`, lost or extra markdown (`**`, `` ` ``, `_`, `#`, `>`), list bullets and numbering, terminal `│ ⎿` prefixes and Read-tool line numbers are all ignored.
+4. It checks the result against the last request: the rule is added only if it matches, the scope is set to where it matched, and a before/after preview is shown. `{i}` in the replacement re-inserts the original matched text, not your pasted copy.
+5. Everything runs inside the hook, so nothing enters the conversation. Each run is logged to `~/.claude/context-rewrite/auto/`.
+
+"From A to B" deletes the whole section including A and B; say "keep both ends" to delete only what's between.
+
 ## When something goes wrong
 Run `/context-rewrite doctor` first. It checks for and automatically fixes:
 - missing or outdated scripts, missing or duplicated `--yrb` in the rc file, a missing `/context-rewrite` command

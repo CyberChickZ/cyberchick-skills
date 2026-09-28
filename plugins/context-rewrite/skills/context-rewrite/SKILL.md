@@ -1,7 +1,7 @@
 ---
 name: context-rewrite
 description: Find/replace the system prompt, system-reminders and conversation before each request is sent (add rules, toggle, capture original text, install/uninstall)
-argument-hint: install | auto <description> | <find> <replace> [--scope] | capture | list | rm | toggle | scope | status | on | off | doctor | restore | uninstall
+argument-hint: install | auto <instruction with {text}> | <find> <replace> [--scope] | capture | list | rm | toggle | scope | status | on | off | doctor | restore | uninstall
 disable-model-invocation: true
 model: sonnet
 effort: low
