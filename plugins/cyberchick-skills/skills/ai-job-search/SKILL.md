@@ -71,6 +71,7 @@ SCRIPTS = ${CLAUDE_PLUGIN_ROOT}/skills/ai-job-search/scripts
 
 ## 硬规则
 - **诚实**：签证照 profile.md 答；不编经历、学历、技能；自由文本只用简历里有的事实和数字。
+- **注册 / 登录失败的**：追加一行到 `<jobdir>/needs_signup.md`（日期|公司|岗位|链接|失败原因），CSV 标 blocked，接着投下一个。
 - **确认页才算投了**。404 不等于失败（去候选人 dashboard 核实）。
 - **外发邮件**：先给用户一行大纲（给谁 / 说啥 / 要啥）→ 他点头 → 再发正式版。
 - **需要用户本人操作的页面**（SSO 账号选择、Apple ID、验证码、短信）：开独立 tab 停住，不在同一 tab 继续跳走。
