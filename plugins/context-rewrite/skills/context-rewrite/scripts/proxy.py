@@ -4,6 +4,7 @@ import json
 import os
 import re
 import sys
+import hashlib
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -19,6 +20,7 @@ HOP = {"connection", "keep-alive", "proxy-authenticate", "proxy-authorization", 
        "trailer", "trailers", "transfer-encoding", "upgrade", "host", "content-length"}
 SKIP_BLOCKS = {"thinking", "redacted_thinking"}
 PLACEHOLDER = "(removed)"
+VERSION = hashlib.sha1(open(os.path.abspath(__file__), "rb").read()).hexdigest()[:12]
 
 _cache = {"mtime": None, "cfg": {"enabled": False, "rules": []}, "compiled": []}
 
@@ -59,9 +61,17 @@ def snapshot(d, headers):
         picks.append(("first_user", users[0]))
     if len(users) > 1:
         picks.append(("last_user", users[-1]))
+    by_role = {"user": [], "assistant": []}
+    for m in msgs:
+        by_role.setdefault(m.get("role", "user"), []).extend(texts(m.get("content")))
+    tools = [t["description"] for t in d.get("tools", []) or [] if isinstance(t, dict) and isinstance(t.get("description"), str)]
+    system = texts(d.get("system", []))
     LAST[sid] = {"time": time.strftime("%Y-%m-%d %H:%M:%S"), "model": d.get("model"),
-                 "system": texts(d.get("system", [])),
-                 "messages": [(label, texts(m.get("content"))) for label, m in picks]}
+                 "system": system,
+                 "messages": [(label, texts(m.get("content"))) for label, m in picks],
+                 # the whole request as searchable text, per rewrite scope
+                 "corpus": {"system": "\n".join(system), "user": "\n".join(by_role["user"]),
+                            "assistant": "\n".join(by_role["assistant"]), "tools": "\n".join(tools)}}
     LAST["__latest__"] = sid
 
 
@@ -109,7 +119,7 @@ def compiled_rules():
                 pat = r["find"] if r.get("regex") else re.escape(r["find"])
                 flags = re.IGNORECASE if r.get("ignore_case") else 0
                 out.append((re.compile(pat, flags), r.get("replace", ""), r.get("regex", False),
-                            set(r.get("scope") or ["system", "user", "assistant"])))
+                            set(r.get("scope") or ["system", "user", "assistant", "tools"])))
             _cache["cfg"], _cache["compiled"] = cfg, out
         except Exception as e:
             log(f"rules.json unreadable, keeping previous version: {e}")
@@ -166,6 +176,9 @@ class Rewriter:
         for msg in d.get("messages", []):
             if isinstance(msg, dict) and "content" in msg:
                 msg["content"] = self.content(msg["content"], msg.get("role", "user"))
+        for t in d.get("tools", []) or []:
+            if isinstance(t, dict) and isinstance(t.get("description"), str):
+                t["description"] = self.text(t["description"], "tools")
         return d
 
 
@@ -179,6 +192,14 @@ class Handler(BaseHTTPRequestHandler):
         n = int(self.headers.get("Content-Length") or 0)
         data = self.rfile.read(n) if n else b""
         path, _, query = self.path.partition("?")
+        if path == "/__ctxrw/version":
+            body = json.dumps({"version": VERSION, "pid": os.getpid()}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if path == "/__ctxrw/last":
             sid = dict(kv.partition("=")[::2] for kv in query.split("&") if kv).get("session", "")
             matched = sid in LAST

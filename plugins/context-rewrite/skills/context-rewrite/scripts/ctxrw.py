@@ -102,11 +102,11 @@ Rules
   "find" "replace" [options]   add a rule, effective from the next request ("add" is optional)
       --regex                  match find as a regex; use \\1 in replace for groups
       --ignore-case            case-insensitive
-      --scope [system,user,assistant] only replace in these places (default: all three); leave the value empty to pick from a menu
+      --scope [system,user,assistant,tools] only replace in these places (default: everywhere); leave the value empty to pick from a menu
   list                         list rules
   rm [n...]                    delete rules; without n, pick from a menu
   toggle [n...]                enable / disable rules; without n, pick from a menu
-  scope [n] [system,user,assistant|all]   change where a rule applies; missing arguments open a menu
+  scope [n] [system,user,assistant,tools|all]   change where a rule applies; missing arguments open a menu
 
 Switch
   on | off                     master switch, effective from the next request
@@ -146,11 +146,11 @@ AI 编写
   "原文" "替换" [选项]          加一条规则，下一次请求生效（add 可省略）
       --regex                  原文按正则匹配，替换里可以用 \\1 引用分组
       --ignore-case            忽略大小写
-      --scope [system,user,assistant] 只在指定位置替换（默认三处都替换）；--scope 后面不写就弹出选择框
+      --scope [system,user,assistant,tools] 只在指定位置替换（默认全部位置）；--scope 后面不写就弹出选择框
   list                         列出规则
   rm [序号...]                 删除规则；不写序号就弹出选择框
   toggle [序号...]             启用 / 停用规则；不写序号就弹出选择框
-  scope [序号] [system,user,assistant|all]   修改规则的替换位置；参数不全就弹出选择框
+  scope [序号] [system,user,assistant,tools|all]   修改规则的替换位置；参数不全就弹出选择框
 
 开关
   on | off                     总开关，下一次请求生效
@@ -166,10 +166,11 @@ SNAP_KEEP = 30
 ACTION = {"name": ""}
 
 COMMANDS = {"snapshot", "snapshots", "restore", "doctor", "on", "off", "status", "list", "add", "add-json", "auto", "rm", "toggle", "scope", "start", "install", "capture", "uninstall", "hook", "ui"}
-SCOPES = ("system", "user", "assistant")
+SCOPES = ("system", "user", "assistant", "tools")
 SCOPE_DESC = {"system": "system prompt",
               "user": L("user messages, system-reminders, tool results", "用户消息、system-reminder、工具结果"),
-              "assistant": L("the model's earlier replies", "模型之前的回复")}
+              "assistant": L("the model's earlier replies", "模型之前的回复"),
+              "tools": L("tool descriptions (tool definitions sent with each request)", "工具描述（每次请求附带的工具定义）")}
 SECTION_LABELS = {"first_user": L("first user message", "第一条 user 消息"),
                   "last_user": L("last user message", "最后一条 user 消息")}
 
@@ -534,6 +535,30 @@ def uninstall():
             "cyberchick-skills marketplace 保留（里面还有别的工具）；要重新装：/plugin install context-rewrite@cyberchick-skills"))
 
 
+def snapshot_corpus(snap):
+    """Searchable text of the last request per scope. Older proxies only kept system + first/last user message."""
+    if snap.get("corpus"):
+        return snap["corpus"]
+    return {"system": "\n".join(snap["system"]), "user": "\n".join(t for _, ts in snap["messages"] for t in ts)}
+
+
+def proxy_version():
+    import urllib.request
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{PORT}/__ctxrw/version", timeout=2) as r:
+            return json.load(r).get("version")
+    except Exception:
+        return None
+
+
+def script_proxy_version():
+    import hashlib
+    try:
+        return hashlib.sha1(open(os.path.join(HOME, "proxy.py"), "rb").read()).hexdigest()[:12]
+    except OSError:
+        return None
+
+
 def fetch_snapshot():
     import urllib.request
     if not running():
@@ -737,17 +762,17 @@ def ui(argv):
     elif cmd == "scope":
         if args:
             lines = head + [f"Question \"Where should rule #{args[0]} apply?\" header \"Scope\" multiSelect: true"] + scope_opts + ["",
-                     f"Run: {me} scope {args[0]} <selected items, comma-separated; write all if all three are selected>"]
+                     f"Run: {me} scope {args[0]} <selected items, comma-separated; write all if every item is selected>"]
         else:
             lines = head + ["Ask two questions in a single AskUserQuestion call:", "Question 1:"] + rule_options("Which rule's scope do you want to change?") + [
                 "  (this question: multiSelect: false)",
                 "Question 2: \"Where should it apply?\" header \"Scope\" multiSelect: true"] + scope_opts + ["",
-                f"Run: {me} scope <selected rule number, without #> <selected scopes, comma-separated; write all if all three are selected>"]
+                f"Run: {me} scope <selected rule number, without #> <selected scopes, comma-separated; write all if every item is selected>"]
     else:
         i = args.index("--scope")
         template = [a for a in args[:i + 1]] + ["__SCOPES__"] + args[i + 1:]
         lines = head + ["Question \"Where should this rule apply?\" header \"Scope\" multiSelect: true"] + scope_opts + ["",
-                 f"Run (replace __SCOPES__ with the selected items, comma-separated; write all if all three are selected): {me} add {shlex.join(template)}"]
+                 f"Run (replace __SCOPES__ with the selected items, comma-separated; write all if every item is selected): {me} add {shlex.join(template)}"]
     print("\n".join(lines))
 
 
@@ -895,14 +920,22 @@ def auto_rule(desc):
     corpus = None
     if res:
         snap = res["snapshot"]
-        corpus = {"system": "\n".join(snap["system"]),
-                  "user": "\n".join(t for _, ts in snap["messages"] for t in ts)}
+        corpus = snapshot_corpus(snap)
         missing = [i for i in sorted(used) if not any(re.search(lit_rx[i], v) for v in corpus.values())]
         if missing:
             print(L("✗ these snippets are not in the last request (check the copied text; /context-rewrite capture shows the original):",
                     "✗ 这些原文在上一次请求里找不到（检查复制的文字；/context-rewrite capture 可以看原文）："))
             for i in missing:
                 print(f"    {{{i}}} {literals[i][:80]!r}")
+            searched = ", ".join(k for k, v in corpus.items() if v)
+            print(L(f"  searched the whole last request ({searched}) of session {res.get('session') or '?'}",
+                    f"  已在会话 {res.get('session') or '?'} 的上一次完整请求里查过（{searched}）"))
+            if not res.get("matched"):
+                print(L("  ⚠ that is NOT this session: this session has no recorded request (not started with --yrb, or no message sent yet)",
+                        "  ⚠ 这不是当前会话：当前会话没有请求记录（不是用 --yrb 启动的，或者还没发过消息）"))
+            if not snap.get("corpus"):
+                print(L("  ⚠ the running proxy is an old version that only records part of the request; run /context-rewrite doctor to restart it, send one message, then retry",
+                        "  ⚠ 正在运行的 proxy 是旧版，只记录了请求的一部分；先跑 /context-rewrite doctor 重启它，随便发一句话，再重试"))
             return
 
     named = set()
@@ -981,8 +1014,7 @@ def add_rules(new, cfg):
     corpus = None
     if res:
         snap = res["snapshot"]
-        corpus = {"system": "\n".join(snap["system"]),
-                  "user": "\n".join(t for _, ts in snap["messages"] for t in ts)}
+        corpus = snapshot_corpus(snap)
     for r in new:
         if not isinstance(r, dict) or not isinstance(r.get("find"), str) or not r["find"]:
             sys.exit(L(f"invalid rule: {r!r}", f"规则格式不对: {r!r}"))
@@ -1007,7 +1039,7 @@ def add_rules(new, cfg):
                     f"✓ 已添加 #{n}（无法核对原文：没有上一次请求的记录）"))
             continue
         pat = re.compile(rule["find"] if rule.get("regex") else re.escape(rule["find"]), re.I if rule.get("ignore_case") else 0)
-        where = {k: len(pat.findall(v)) for k, v in corpus.items() if k in (rule.get("scope") or ("system", "user"))}
+        where = {k: len(pat.findall(v)) for k, v in corpus.items() if k in (rule.get("scope") or SCOPES)}
         hits = sum(where.values())
         if hits:
             detail = ", ".join(f"{k} {v}" for k, v in where.items() if v)
@@ -1132,8 +1164,16 @@ def doctor():
             fail(L(f"port {PORT} is used by another program: {cmds[0][:80]}", f"端口 {PORT} 被别的程序占用: {cmds[0][:80]}"),
                  L("close that program, or start claude --yrb with CTXRW_PORT=<another port>",
                    "关掉那个程序，或用 CTXRW_PORT=其他端口 启动 claude --yrb"))
+        elif proxy_version() != script_proxy_version():
+            stop_proxy()
+            try:
+                start()
+                fix(L(f"the running proxy was an old version; restarted it with the current one (127.0.0.1:{PORT})",
+                      f"正在运行的 proxy 是旧版本，已换成当前版本重启（127.0.0.1:{PORT}）"))
+            except SystemExit as e:
+                fail(L("proxy restart failed", "proxy 重启失败"), str(e))
         else:
-            ok(L(f"proxy running (127.0.0.1:{PORT})", f"proxy 在运行（127.0.0.1:{PORT}）"))
+            ok(L(f"proxy running, current version (127.0.0.1:{PORT})", f"proxy 在运行，版本是最新的（127.0.0.1:{PORT}）"))
     elif yrb_session():
         try:
             start()
@@ -1337,8 +1377,8 @@ def main(argv):
                 if sc:
                     opts["scope"] = sc
             elif a == "--scope":
-                sys.exit(L("--scope needs a value (system,user,assistant or all); inside a conversation, leaving it empty opens a menu",
-                           "--scope 后面要写范围（system,user,assistant 或 all）；在对话里不写会弹出选择框"))
+                sys.exit(L("--scope needs a value (system,user,assistant,tools or all); inside a conversation, leaving it empty opens a menu",
+                           "--scope 后面要写范围（system,user,assistant,tools 或 all）；在对话里不写会弹出选择框"))
             else:
                 pos.append(a)
             i += 1
@@ -1360,7 +1400,7 @@ def main(argv):
             print(L("No rules yet. Add one: /context-rewrite \"find\" \"replace\"", "还没有规则。加规则：/context-rewrite \"原文\" \"替换\""))
             return
         if not args or (cmd == "scope" and len(args) < 2):
-            usage = L("<n> <system,user,assistant|all>", "<序号> <system,user,assistant|all>") if cmd == "scope" else L("<n...>", "<序号...>")
+            usage = L("<n> <system,user,assistant,tools|all>", "<序号> <system,user,assistant,tools|all>") if cmd == "scope" else L("<n...>", "<序号...>")
             sys.exit(L(f"Usage: /context-rewrite {cmd} {usage} (inside a conversation, leaving arguments out opens a menu)",
                        f"用法: /context-rewrite {cmd} {usage}（在对话里不写参数会弹出选择框）"))
         try:
