@@ -1,5 +1,5 @@
-# context-rewrite: `claude --yrb` 让当前这一个 claude 进程经过本地 proxy；其他会话不受影响。
-# 由 context-rewrite 插件自动安装，/context-rewrite:rw uninstall 自动移除。
+# context-rewrite: `claude --yrb` routes only this one claude process through the local proxy; other sessions are untouched.
+# Installed by /context-rewrite install and removed by /context-rewrite uninstall.
 
 if [ -n "$ZSH_VERSION" ]; then
   if (( $+functions[claude] )) && [[ $functions[claude] != *_ctxrw_run* ]]; then
@@ -10,6 +10,15 @@ elif [ -n "$BASH_VERSION" ]; then
     eval "$(declare -f claude | sed '1s/^claude/_ctxrw_orig_claude/')"
   fi
 fi
+
+_ctxrw_zh() {
+  case "$CTXRW_LANG" in zh) return 0 ;; en) return 1 ;; esac
+  local _s="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"
+  if [ -f "$_s" ] && grep -Eiq '"language"[[:space:]]*:[[:space:]]*"[^"]*(chinese|中文|zh)' "$_s"; then return 0; fi
+  if [ -f "$_s" ] && grep -Eq '"language"[[:space:]]*:' "$_s"; then return 1; fi
+  case "$LANG" in zh*) return 0 ;; esac
+  return 1
+}
 
 _ctxrw_run() {
   if typeset -f _ctxrw_orig_claude >/dev/null 2>&1; then
@@ -32,7 +41,11 @@ claude() {
   fi
   local d="${CTXRW_HOME:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/context-rewrite}"
   if [ ! -f "$d/ctxrw.py" ]; then
-    echo "context-rewrite 未安装或已卸载，按普通方式启动" >&2
+    if _ctxrw_zh; then
+      echo "context-rewrite 未安装或已卸载，按普通方式启动" >&2
+    else
+      echo "context-rewrite is not installed (or was uninstalled); starting claude normally" >&2
+    fi
     _ctxrw_run "${args[@]}"
     return
   fi

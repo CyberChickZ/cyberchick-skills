@@ -9,8 +9,8 @@
     {
       "name": "context-rewrite",
       "source": "./plugins/context-rewrite",
-      "version": "0.7.0",
-      "description": "发送请求前，对 system prompt、system-reminder 和对话内容做 find/replace；用 claude --yrb 启动的会话生效。"
+      "version": "0.8.1",
+      "description": "Find/replace the system prompt, system-reminders and conversation before each request is sent; applies to sessions started with claude --yrb."
     },
     {
       "name": "ai-job-search",

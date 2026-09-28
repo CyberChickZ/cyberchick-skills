@@ -48,7 +48,7 @@ LAST = {}
 
 
 def snapshot(d, headers):
-    """在内存里记住每个会话主 agent 最近一次请求的原文（替换前），供 capture 查看。"""
+    """Keep the latest original (pre-rewrite) request of each session's main agent in memory, for capture."""
     if headers.get("x-claude-code-agent-id"):
         return
     sid = headers.get("x-claude-code-session-id") or "-"
@@ -56,9 +56,9 @@ def snapshot(d, headers):
     users = [m for m in msgs if m.get("role") == "user"]
     picks = []
     if users:
-        picks.append(("第一条 user 消息", users[0]))
+        picks.append(("first_user", users[0]))
     if len(users) > 1:
-        picks.append(("最后一条 user 消息", users[-1]))
+        picks.append(("last_user", users[-1]))
     LAST[sid] = {"time": time.strftime("%Y-%m-%d %H:%M:%S"), "model": d.get("model"),
                  "system": texts(d.get("system", [])),
                  "messages": [(label, texts(m.get("content"))) for label, m in picks]}
@@ -87,7 +87,7 @@ def watchdog(srv):
                 alive.add(pid)
         known = alive
         if not alive and time.time() - started > 30:
-            log("没有存活的 --yrb 会话，proxy 退出")
+            log("no live --yrb sessions, proxy exiting")
             srv.shutdown()
             return
 
@@ -112,7 +112,7 @@ def compiled_rules():
                             set(r.get("scope") or ["system", "user", "assistant"])))
             _cache["cfg"], _cache["compiled"] = cfg, out
         except Exception as e:
-            log(f"rules.json 读取失败，沿用上一版: {e}")
+            log(f"rules.json unreadable, keeping previous version: {e}")
     return _cache["compiled"] if _cache["cfg"].get("enabled") else []
 
 
@@ -198,7 +198,7 @@ class Handler(BaseHTTPRequestHandler):
                 snapshot(d, self.headers)
             except Exception as e:
                 d = None
-                log(f"{path} 请求体解析失败，原样转发: {e}")
+                log(f"{path}: failed to parse request body, forwarding as-is: {e}")
             rules = compiled_rules() if d is not None else []
             if rules:
                 try:
@@ -207,9 +207,9 @@ class Handler(BaseHTTPRequestHandler):
                     replaced = rw.count
                     if rw.count:
                         data = json.dumps(d, ensure_ascii=False).encode()
-                        log(f"{path} 替换 {rw.count} 处")
+                        log(f"{path}: replaced {rw.count}")
                 except Exception as e:
-                    log(f"{path} 改写失败，原样转发: {e}")
+                    log(f"{path}: rewrite failed, forwarding as-is: {e}")
 
         headers = {k: v for k, v in self.headers.items() if k.lower() not in HOP}
         headers["Host"] = UPSTREAM.netloc
@@ -230,12 +230,12 @@ class Handler(BaseHTTPRequestHandler):
             if resp.status == 400 and replaced:
                 err = resp.read(2000).decode("utf-8", "replace")
                 conn.close()
-                log(f"{path} 替换后被 API 拒绝（HTTP 400，替换 {replaced} 处）: {err[:300]}")
-                log(f"{path} 已自动回退：本次改用原文重发（某条规则可能有问题，跑 /yrb doctor 查看）")
+                log(f"{path}: rejected by API after rewrite (HTTP 400, replaced {replaced}): {err[:300]}")
+                log(f"{path}: fell back to original body for this request (a rule may be broken; run /context-rewrite doctor)")
                 conn, resp = send(original)
                 replaced = 0
         except Exception as e:
-            log(f"上游连接失败: {e}")
+            log(f"upstream connection failed: {e}")
             msg = json.dumps({"type": "error", "error": {"type": "api_error", "message": f"context-rewrite proxy: {e}"}}).encode()
             self.send_response(502)
             self.send_header("Content-Type", "application/json")
@@ -245,7 +245,7 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if resp.status >= 400 and path.startswith("/v1/messages"):
-            log(f"{path} 上游返回 HTTP {resp.status}" + (f"（本次替换 {replaced} 处）" if replaced else "（本次没有替换）"))
+            log(f"{path}: upstream HTTP {resp.status}" + (f" (replaced {replaced})" if replaced else " (no replacement)"))
         self.send_response(resp.status, resp.reason)
         length = resp.getheader("Content-Length")
         for k, v in resp.getheaders():
@@ -280,7 +280,7 @@ if __name__ == "__main__":
     os.makedirs(HOME, exist_ok=True)
     srv = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
     srv.daemon_threads = True
-    log(f"proxy 启动 127.0.0.1:{PORT} -> {UPSTREAM.geturl()}")
+    log(f"proxy started 127.0.0.1:{PORT} -> {UPSTREAM.geturl()}")
     if os.environ.get("CTXRW_NO_WATCHDOG") != "1":
         threading.Thread(target=watchdog, args=(srv,), daemon=True).start()
     try:
