@@ -23,7 +23,7 @@ SCRIPTS = 本 SKILL.md 所在目录下的 scripts/（Claude Code 里就是 ${CLA
 | `DATA/local.md` | 个人设定：授权、看板链接、简历选择、方向优先级 | **每次开始时** |
 | `DATA/profile.md` | 答案库：联系方式、地址、学历、签证答法、常见题、pitch、硬停 | **每次派填表子代理前** |
 | `DATA/quotas.md` | 各公司投递上限 / 冷却 / 稀缺名额 | 选岗时 |
-| `DATA/ats_playbook.md` | 各 ATS 填表技巧和坑（Greenhouse/Ashby/Workday/iCIMS/Apple…） | 子代理开工前必读 |
+| `DATA/ats_playbook.md` | 填表手册：通用流程、表单技巧、账号登录、各 ATS 系统、公司特例（固定 5 章） | 子代理开工前必读 |
 | `DATA/watchlist.json` | 目标公司 + 已验证的 ATS slug | 加公司时 |
 | `DATA/config.json` | 路径（jobdir、简历仓库、简历输出名、简历变体）+ **`filters` 筛岗偏好**：跳过的公司、直接排除的 flag、毕业年份、地点、Amazon 搜索词、方向排序 | 路径不对、筛岗结果不对时 |
 | `SCRIPTS/source_jobs.py` | 拉岗（watchlist 里的 Greenhouse/Ashby/Lever + **Amazon search.json**）+ 预筛 JD + 去重 → `<jobdir>/queue_YYYYMMDD.md/.json` | 每天第一步 |
@@ -46,17 +46,17 @@ SCRIPTS = 本 SKILL.md 所在目录下的 scripts/（Claude Code 里就是 ${CLA
 3. **选一批 4–5 个**：按 `DATA/local.md` 的方向优先级；查 `DATA/quotas.md`；稀缺名额只列给用户选。
 4. **派填表子代理**（用较快的模型：Claude Code 里 `model: "sonnet"`，Codex 里用快速档；一次只一个，浏览器串行）——用下面的模板，**引用文件，不要把规则抄进 prompt**。
 5. 子代理回来 → 核对它写进 CSV 的行 → `render_site.py` → 重新 publish 看板。
-6. **汇报**：表格（公司/岗位/状态/卡点）+「要你做的」+ 看板链接。
+6. **汇报**：先核对当前浏览器 tab 和子代理的实际状态，不拿旧状态汇报；然后给表格（公司/岗位/状态/卡点）+「要你做的」+ 看板链接。
 
 ### 子代理 prompt 模板
 ```
 你是填表子代理。开工前读：
 - DATA/profile.md（答案库+硬停，照实答）
-- DATA/ats_playbook.md（按 ATS 找对应小节）
+- DATA/ats_playbook.md（先读第 1–3 章，再看对应 ATS 和公司）
 （DATA 换成实际路径）
 队列：<4–5 行：公司 | 岗位 | 链接 | 用哪版简历>
 规则：先读 JD，写明不给 sponsorship / 要公民或 clearance / 要 PhD → 跳过记原因。单岗卡 3 次就标 blocked 换下一个。只有看到确认页才算 submitted。每投完一个立刻追加/更新 <jobdir>/applications.csv（csv 模块写，别手拼逗号）。遇到硬停项 → 开一个独立浏览器 tab 停在那步不关，汇报里写 tab 标题。
-学到新坑 → 修好后把解法追加进 DATA/ats_playbook.md 对应小节（带日期+公司）。
+学到新坑 → 不要自己写文件，在汇报里写清楚「做法 — 原因（公司）」，由主代理合并进 ats_playbook.md。
 汇报：每岗一行 公司 | 岗位 | 状态 | 原因。
 ```
 
@@ -78,12 +78,14 @@ SCRIPTS = 本 SKILL.md 所在目录下的 scripts/（Claude Code 里就是 ${CLA
 - **子代理用较快的模型**（Claude: sonnet）；浏览器同一时刻只有一个代理。
 - 一批 4–5 个。批次太大子代理会在“评估规模”上耗光预算、一个都不投。
 
-## 自我维护
-所有会变的东西都写进 `DATA/`，不要改插件目录里的文件（插件更新会覆盖）：
-- 用户给了新事实（地址、学历更正、某题怎么答）→ **当轮**改 `DATA/profile.md`。
-- 撞到新配额 / 冷却 → **当轮**改 `DATA/quotas.md`，并把公司加进 `DATA/config.json` 的 `filters.skip`（写原因和到期日），到期后删掉。
+## 自我维护（结构固定，禁止无限追加）
+所有会变的东西都写进 `DATA/`，不要改插件目录里的文件（插件更新会覆盖）。只有主代理写这些文件，子代理把新经验写在汇报里。
+- **`ats_playbook.md`**：固定 5 章（通用流程 / 表单技巧 / 账号登录验证码 / 各 ATS 系统 / 公司特例）。新经验**并入对应章节**：同主题已有条目就改写或替换它，没有才加一条；不新建章节、不写「新增」「补充」「日期」类标题；每条一行「做法 — 原因（公司 月-日）」；过时的直接删。
+- **`local.md`**：只放个人设定，固定 6 章（授权 / 看板 / 数据 / 方向优先级 / 简历怎么选 / 其他偏好），就地改写。操作步骤不要写进来。
+- **`profile.md`**：用户给的新事实（地址、学历更正）和作答口径（某道题怎么答）当轮写这里，不写进 ats_playbook.md。
+- 子代理 prompt 里第二次抄同一条规则 → 那条规则该进文件了。
+- **改完上面任一文件，必须跑 `python3 SCRIPTS/lint_data.py`**。不通过就合并、精简、删过时条目，直到通过；不能靠新增章节绕过。
+- 撞到新配额 / 冷却 → 改 `DATA/quotas.md`，并把公司加进 `DATA/config.json` 的 `filters.skip`（写原因和到期日），到期后删掉。
 - 筛岗偏好变了（地点、排除条件、毕业年份…）→ 改 `DATA/config.json` 的 `filters`，不要改脚本。
-- 修好一个填表坑 → **当轮**写进 `DATA/ats_playbook.md`。
 - 加目标公司 → `source_jobs.py --probe <ats>:<slug>` 验证通过再进 `DATA/watchlist.json`（Ashby 要 UA 头、不能并发，脚本已处理）。
-- 子代理 prompt 里出现了第二次抄同一条规则 → 那条规则该进文件了。
-- 想把通用的 ATS 经验分享出去：去掉个人信息后，同步到插件仓库里的 `ats_playbook.md`。
+- 想把通用的 ATS 经验分享出去：去掉个人信息后，同步到插件仓库里的 `ats_playbook.md`（也要通过 `lint_data.py --seed`）。

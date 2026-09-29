@@ -1,6 +1,6 @@
 {
   "name": "ai-job-search",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "全自动求职流水线：拉岗、预筛、选简历、派子代理填表、清邮箱、刷新看板。个人资料放本机 ~/.claude/cyberchick-skills/ai-job-search/。",
   "author": {
     "name": "CyberChickZ",
