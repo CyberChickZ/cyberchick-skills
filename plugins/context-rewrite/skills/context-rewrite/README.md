@@ -27,6 +27,7 @@ claude --yrb              # combines with other flags: claude --yrb --resume, cl
 In the session:
 ```
 /context-rewrite auto remove every instruction to add Co-Authored-By   # describe it in one sentence; Claude finds the text, drafts rules, and adds the ones you tick
+/context-rewrite verify                                    # check every rule against the last real requests (main + subagents): hits, before/after, actual replacements
 /context-rewrite capture                                   # show the system prompt and injected content actually sent last time (before rewriting), and save it to a file
 /context-rewrite "find" "replace"                          # add a rule by hand, effective from the next request
 /context-rewrite "find" "replace" --scope                  # --scope with no value: pick where to replace from a menu
@@ -49,7 +50,7 @@ In the session:
 
 ### Autocomplete
 Every subcommand is also its own command, so typing `/context-rewrite:` lists them all with descriptions:
-`/context-rewrite:install`, `:auto`, `:autowoc`, `:add`, `:capture`, `:list`, `:rm`, `:toggle`, `:scope`, `:on`, `:off`, `:status`, `:doctor`, `:restore`, `:snapshots`, `:snapshot`, `:uninstall`.
+`/context-rewrite:install`, `:auto`, `:autowoc`, `:add`, `:capture`, `:verify`, `:list`, `:rm`, `:toggle`, `:scope`, `:on`, `:off`, `:status`, `:doctor`, `:restore`, `:snapshots`, `:snapshot`, `:uninstall`.
 `/context-rewrite:capture` is the same as `/context-rewrite capture`. Short names such as `/capture` work too, except `status`, `doctor` and `help`, which Claude Code already uses — type the full name for those.
 
 ### Subagents

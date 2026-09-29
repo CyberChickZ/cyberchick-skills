@@ -27,6 +27,7 @@ claude --yrb              # 可以和其他参数叠加：claude --yrb --resume�
 会话里：
 ```
 /context-rewrite auto 去掉所有要求加 Co-Authored-By 的说明   # 用一句话描述，由 Claude 找原文、写规则，勾选确认后写入
+/context-rewrite verify                                    # 逐条核对规则：上一次真实请求（主会话 + 子代理）里命中哪里、改前改后、proxy 实际替换几处
 /context-rewrite capture                                   # 显示上一次实际发出去的 system prompt 和注入内容（替换前原文），同时存成文件
 /context-rewrite "原文" "替换"                              # 手动加规则，下一次请求就生效
 /context-rewrite "原文" "替换" --scope                      # --scope 后面不写：弹出选择框选替换位置
@@ -48,7 +49,7 @@ claude --yrb              # 可以和其他参数叠加：claude --yrb --resume�
 
 ### 自动补全
 每个子命令也是一个独立命令，输入 `/context-rewrite:` 就会列出全部子命令和说明：
-`/context-rewrite:install`、`:auto`、`:autowoc`、`:add`、`:capture`、`:list`、`:rm`、`:toggle`、`:scope`、`:on`、`:off`、`:status`、`:doctor`、`:restore`、`:snapshots`、`:snapshot`、`:uninstall`。
+`/context-rewrite:install`、`:auto`、`:autowoc`、`:add`、`:capture`、`:verify`、`:list`、`:rm`、`:toggle`、`:scope`、`:on`、`:off`、`:status`、`:doctor`、`:restore`、`:snapshots`、`:snapshot`、`:uninstall`。
 `/context-rewrite:capture` 和 `/context-rewrite capture` 完全一样。没有冲突时也可以直接敲短名，比如 `/capture`；`status`、`doctor`、`help` 这几个名字 Claude Code 自己在用，要敲全名。
 
 ### 子代理

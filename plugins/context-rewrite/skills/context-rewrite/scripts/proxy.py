@@ -48,6 +48,15 @@ def texts(c):
 LAST = {}
 
 
+STATS = {}  # (session, "main" | agent_type) -> {"time", "hits": {rule#: {scope: n}}}
+
+
+def record_stats(headers, hits):
+    sid = headers.get("x-claude-code-session-id") or "-"
+    who = headers.get("x-claude-code-agent-type") or ("subagent" if headers.get("x-claude-code-agent-id") else "main")
+    STATS[(sid, who)] = {"time": time.strftime("%Y-%m-%d %H:%M:%S"), "hits": {str(k): v for k, v in hits.items()}}
+
+
 AGENTS = {}  # (session, agent_type) -> latest subagent snapshot; ("*", agent_type) -> latest across sessions
 
 
@@ -176,13 +185,13 @@ def compiled_rules():
             with open(RULES) as f:
                 cfg = json.load(f)
             out = []
-            for r in cfg.get("rules", []):
+            for idx, r in enumerate(cfg.get("rules", []), 1):
                 if not r.get("enabled", True) or not r.get("find"):
                     continue
                 pat = r["find"] if r.get("regex") else re.escape(r["find"])
                 flags = re.IGNORECASE if r.get("ignore_case") else 0
                 out.append((re.compile(pat, flags), r.get("replace", ""), r.get("regex", False),
-                            set(r.get("scope") or ["system", "user", "assistant", "tools"])))
+                            set(r.get("scope") or ["system", "user", "assistant", "tools"]), idx))
             _cache["cfg"], _cache["compiled"] = cfg, out
         except Exception as e:
             log(f"rules.json unreadable, keeping previous version: {e}")
@@ -193,16 +202,20 @@ class Rewriter:
     def __init__(self, rules):
         self.rules = rules
         self.count = 0
+        self.hits = {}  # rule number (1-based, as in rules.json) -> {scope: replacements}
 
     def text(self, s, where):
-        for pat, rep, is_regex, scope in self.rules:
+        for pat, rep, is_regex, scope, idx in self.rules:
             if where not in scope:
                 continue
             if is_regex:
                 s, n = pat.subn(rep, s)
             else:
                 s, n = pat.subn(lambda _m, r=rep: r, s)
-            self.count += n
+            if n:
+                self.count += n
+                self.hits.setdefault(idx, {}).setdefault(where, 0)
+                self.hits[idx][where] += n
         return s
 
     def content(self, c, where):
@@ -273,11 +286,19 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             return
-        if path in ("/__ctxrw/last", "/__ctxrw/corpus"):
+        if path in ("/__ctxrw/last", "/__ctxrw/corpus", "/__ctxrw/stats", "/__ctxrw/sources"):
             from urllib.parse import parse_qs
             q = {k: v[0] for k, v in parse_qs(query).items()}
             sid = q.get("session", "")
-            if path == "/__ctxrw/corpus":
+            if path == "/__ctxrw/stats":
+                body = json.dumps({who: v for (s_, who), v in STATS.items() if s_ == sid} or
+                                  {f"{who}@{s_}": v for (s_, who), v in STATS.items()}, ensure_ascii=False).encode()
+            elif path == "/__ctxrw/sources":
+                main = LAST.get(sid) or LAST.get(LAST.get("__latest__"))
+                srcs = ([["main", main["corpus"]]] if main else []) + [
+                    [k, (AGENTS.get((sid, k)) or AGENTS.get(("*", k)))["corpus"]] for k in sorted({k for _, k in AGENTS})]
+                body = json.dumps({"sources": srcs, "matched": sid in LAST}, ensure_ascii=False).encode()
+            elif path == "/__ctxrw/corpus":
                 corpus, sources = merged_corpus(sid)
                 body = json.dumps({"corpus": corpus, "sources": sources, "matched": sid in LAST}, ensure_ascii=False).encode()
             elif q.get("agent"):
@@ -310,9 +331,10 @@ class Handler(BaseHTTPRequestHandler):
                     rw = Rewriter(rules)
                     d = rw.body(d)
                     replaced = rw.count
+                    record_stats(self.headers, rw.hits)
                     if rw.count:
                         data = json.dumps(d, ensure_ascii=False).encode()
-                        log(f"{path}: replaced {rw.count}")
+                        log(f"{path}: replaced {rw.count} ({', '.join(f'#{i}:{sum(v.values())}' for i, v in sorted(rw.hits.items()))})")
                 except Exception as e:
                     log(f"{path}: rewrite failed, forwarding as-is: {e}")
 

@@ -97,6 +97,7 @@ AI-written rules
                                By default it is checked against the whole last request first (added only if it matches, with a before/after preview); auto --no-check (or autowoc) adds it without checking.
 
 Find the original text
+  verify                       check every rule: where it matches in the last requests, before/after, and how many replacements the proxy actually made
   capture                      show the system prompt and injected content actually sent in the last request (before rewriting), and save it to a file
 
 Rules
@@ -141,6 +142,7 @@ AI 编写
                                默认先拿上一次完整请求核对（命中才加，并给出改前/改后预览）；auto --no-check（或 autowoc）不核对直接加。
 
 找原文
+  verify                       逐条检查规则：在上一次请求里命中哪里、改前改后，以及 proxy 实际替换了几处
   capture                      显示上一次实际发出去的 system prompt 和注入内容（替换前），并存成文件
 
 规则
@@ -166,9 +168,9 @@ SNAP_DIR = os.path.join(HOME, "snapshots")
 SNAP_KEEP = 30
 ACTION = {"name": ""}
 
-COMMANDS = {"stop-if-idle", "autowoc", "snapshot", "snapshots", "restore", "doctor", "on", "off", "status", "list", "add", "add-json", "auto", "rm", "toggle", "scope", "start", "install", "capture", "uninstall", "hook", "ui"}
+COMMANDS = {"verify", "stop-if-idle", "autowoc", "snapshot", "snapshots", "restore", "doctor", "on", "off", "status", "list", "add", "add-json", "auto", "rm", "toggle", "scope", "start", "install", "capture", "uninstall", "hook", "ui"}
 SCOPES = ("system", "user", "assistant", "tools")
-SUBCOMMAND_SKILLS = {"install", "uninstall", "auto", "autowoc", "add", "capture", "list", "rm", "toggle", "scope", "on", "off",
+SUBCOMMAND_SKILLS = {"verify", "install", "uninstall", "auto", "autowoc", "add", "capture", "list", "rm", "toggle", "scope", "on", "off",
                      "status", "doctor", "restore", "snapshots", "snapshot"}
 SCOPE_DESC = {"system": "system prompt",
               "user": L("user messages, system-reminders, tool results", "用户消息、system-reminder、工具结果"),
@@ -1381,6 +1383,87 @@ def parse_scope(v):
     return None if set(ss) == set(SCOPES) else [s for s in SCOPES if s in ss]
 
 
+def rule_label(r):
+    if r.get("auto"):
+        d = r["auto"]["description"]
+        return "auto: " + (d if len(d) <= 60 else d[:57] + "…")
+    f = r["find"] if len(r["find"]) <= 50 else r["find"][:47] + "…"
+    return f"{f!r} → {r.get('replace', '')!r}"
+
+
+def verify():
+    """Dry-run every rule on the last recorded requests (main session + each subagent type) and show where it
+    matches, with a before/after excerpt; plus how many replacements the proxy actually made last time."""
+    cfg = load()
+    sid = os.environ.get("CTXRW_SESSION_ID", "")
+    if not cfg["rules"]:
+        print(L("No rules yet.", "还没有规则。"))
+        return
+    head = [L("switch ", "总开关 ") + ("ON" if cfg.get("enabled", True) else "OFF")]
+    if os.environ.get("CLAUDECODE"):
+        head.append(L("this session: --yrb ✓", "当前会话：--yrb ✓") if yrb_session() else L("this session: NOT --yrb ✗", "当前会话：不是 --yrb ✗"))
+    if running():
+        head.append(L("proxy: current ✓", "proxy：最新版 ✓") if proxy_version() == script_proxy_version() else L("proxy: OLD version ✗ (run doctor)", "proxy：旧版 ✗（跑 doctor）"))
+    else:
+        head.append(L("proxy: not running ✗", "proxy：没在运行 ✗"))
+    print(" · ".join(head))
+    res = proxy_get("/__ctxrw/sources", session=sid) or {}
+    sources = res.get("sources") or []
+    stats = proxy_get("/__ctxrw/stats", session=sid) or {}
+    if not sources:
+        print(L("No request has gone through the proxy yet: send any message in a --yrb session, then run verify again.",
+                "还没有请求经过 proxy：在 --yrb 会话里随便发一句话，再跑 verify。"))
+    else:
+        print(L("Last recorded requests: ", "已记录的上一次请求：") + L(", ", "、").join(
+            L("main session", "主会话") if n == "main" else L(f"subagent {n}", f"子代理 {n}") for n, _ in sources))
+    bar = "─" * 40
+
+    def clip(t, n=240):
+        t = t.replace("\n", "⏎")
+        return t if len(t) <= n else t[:n // 2] + " … " + t[-n // 2:]
+
+    dead = 0
+    for i, r in enumerate(cfg["rules"], 1):
+        on = r.get("enabled", True)
+        scopes = r.get("scope") or list(SCOPES)
+        try:
+            rx = re.compile(r["find"] if r.get("regex") else re.escape(r["find"]), re.I if r.get("ignore_case") else 0)
+        except re.error as e:
+            print(f"\n#{i} ✗ {rule_label(r)}\n   " + L(f"invalid regex: {e}", f"正则无效：{e}"))
+            continue
+        where, first = [], None
+        for name, corpus in sources:
+            for sc in scopes:
+                text = corpus.get(sc) or ""
+                n = len(rx.findall(text))
+                if n:
+                    where.append(f"{L('main', '主会话') if name == 'main' else name} {sc} {n}")
+                    if first is None:
+                        m = rx.search(text)
+                        repl = r.get("replace", "")
+                        after_mid = m.expand(repl) if r.get("regex") else repl
+                        first = (text[max(0, m.start() - 60):m.end() + 60],
+                                 text[max(0, m.start() - 60):m.start()] + after_mid + text[m.end():m.end() + 60])
+        actual = {who: sum(st["hits"].get(str(i), {}).values()) for who, st in stats.items()}
+        actual_txt = L(", ", "、").join(f"{L('main', '主会话') if w == 'main' else w} {n}" for w, n in actual.items() if n)
+        mark = "✓" if where else "⚠"
+        if not on:
+            mark = "·"
+        print(f"\n#{i} {mark} {rule_label(r)}" + ("" if on else L("  (disabled)", "（已停用）")))
+        if sources:
+            print("   " + L("dry run: ", "模拟命中：") + (L(", ", "、").join(where) if where else L("0 — this rule would not change anything right now", "0 处 — 这条规则现在不会改到任何内容")))
+        if stats:
+            print("   " + L("actually replaced in the last real request: ", "上一次真实请求里实际替换：") + (actual_txt or "0"))
+        if first:
+            print("   " + L("before: ", "改前：") + clip(first[0]))
+            print("   " + L("after:  ", "改后：") + clip(first[1]))
+        if sources and not where and on:
+            dead += 1
+    if dead:
+        print("\n" + L(f"⚠ {dead} rule(s) match nothing. Check the text with /context-rewrite:capture (or capture @subagent), or remove them.",
+                       f"⚠ 有 {dead} 条规则一处都没命中。用 /context-rewrite:capture（或 capture @子代理）核对原文，或者删掉。"))
+
+
 def show(cfg):
     if not cfg["rules"]:
         print(L("  (no rules)", "  （无规则）"))
@@ -1475,6 +1558,8 @@ def main(argv):
         show(cfg)
     elif cmd == "capture":
         capture(args)
+    elif cmd == "verify":
+        verify()
     elif cmd == "add-json":
         try:
             new = json.loads(" ".join(args) if args else sys.stdin.read())
