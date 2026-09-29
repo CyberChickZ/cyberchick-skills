@@ -1,6 +1,6 @@
 ---
 name: auto
-description: "context-rewrite: Write a rewrite rule from an instruction; put the exact text in {braces}. Checked against the last request unless --no-check."
+description: "context-rewrite: Write a rewrite rule from an instruction; put the exact text in {braces}. The model only picks a fixed operation or fills a validated spec; checked block by block against the last request unless --no-check."
 argument-hint: "[--no-check] <instruction with {text}>"
 disable-model-invocation: true
 model: sonnet

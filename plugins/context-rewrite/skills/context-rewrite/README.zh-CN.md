@@ -26,7 +26,7 @@ claude --yrb              # 可以和其他参数叠加：claude --yrb --resume�
 ```
 会话里：
 ```
-/context-rewrite auto 去掉所有要求加 Co-Authored-By 的说明   # 用一句话描述，由 Claude 找原文、写规则，勾选确认后写入
+/context-rewrite auto 删掉 {Co-Authored-By} 所在的行                  # 原文放 {…}，模型只选操作，脚本生成规则
 /context-rewrite verify                                    # 逐条核对规则：上一次真实请求（主会话 + 子代理）里命中哪里、改前改后、proxy 实际替换几处
 /context-rewrite capture                                   # 显示上一次实际发出去的 system prompt 和注入内容（替换前原文），同时存成文件
 /context-rewrite "原文" "替换"                              # 手动加规则，下一次请求就生效
@@ -41,7 +41,7 @@ claude --yrb              # 可以和其他参数叠加：claude --yrb --resume�
 ```
 - 参数写全的命令由 hook 直接执行：结果只显示给你，不进对话历史，不调用模型，不耗 token
 - 参数没写全的 `rm` / `toggle` / `scope` / `--scope`，以及 `auto`，需要 Claude 弹出选择框（AskUserQuestion）或写规则。这一轮固定用 **sonnet + low effort**（skill 的 `model` / `effort` 字段），下一句话就切回你原来的模型
-- `auto` 会把 proxy 记下的上一次请求原文交给 Claude，让它从里面逐字复制；写入时再核对原文里有没有这段，没找到会提示你
+- `auto` 不把原文交给模型；模型只看去掉原文后的指令，选一种操作
 - 替换后变成空的文本块会被去掉（API 不接受空文本块）；整条消息被清空时留 `(removed)` 占位
 - 在同一个 `--yrb` 进程里 `/resume` 老对话、派出去的子 agent，都会经过替换
 - 不是从你终端启动的会话（例如后台 agent）不会经过替换
@@ -63,9 +63,12 @@ claude --yrb              # 可以和其他参数叠加：claude --yrb --resume�
 /context-rewrite auto 把 {Creating accounts on the user's behalf} 替换成 {Creating accounts is fine}
 ```
 1. 脚本把每个 `{…}` 里的原文逐字取出（不经过模型，不会抄错）。
-2. 只把剩下的指令（「从 {0} 到 {1} 删除」）交给 Claude（sonnet、low effort、不给工具），拿回一个正则骨架，比如 `{0}[\s\S]*?{1}\n?`。
-3. Python 把占位符换成原文的正则：只看字母、数字和汉字，中间的标点、空格、换行、markdown 一律忽略，所以 `{A'A  A . A}` 能匹配 `AAAA` 或 `A-A A.A`。Read 工具的行号和列表编号会先去掉。原文可以只贴一行里的一部分，删除按整行处理。
-4. 默认先拿上一次完整请求（system、全部消息、工具描述）核对：命中才加，范围自动设成命中的位置，并给出改前/改后预览。写成 `auto --no-check …` 或 `autowoc …` 就不核对直接加（不需要 --yrb 会话）。替换内容里的 `{i}` 写回的是原文实际匹配到的文字，不是你粘贴的那份。
+2. 剩下的指令（「从 {0} 到 {1} 删除」）交给 Claude（sonnet、low effort、不给工具），它**只从下面 7 种操作里选一个编号**，不写正则：
+   1 删这段文字 · 2 删所在整行 · 3 从 A 行删到 B 行（含两端）· 4 删 A 行和 B 行之间（保留两端）· 5 把这段文字换成 X · 6 把所在整行换成 X · 7 把 A 行到 B 行整体换成 X
+   都不合适时选 8，只能填固定字段组合：`a`/`b`（找哪段、范围到哪段）、`unit`（文字 / 整行 / 整个文本块）、`keep`（保留哪端）、`new`（换成哪几段原文，或原来匹配到的 a/b）。脚本逐项校验，多一个字段、编号不对、有原文没用上都会拒绝，模型永远碰不到正则。
+   这次调用是干净环境：自己的一句英文 system prompt 替换 Claude Code 默认提示词，在空目录里运行，不加载设置、CLAUDE.md、memory、skills、MCP、插件和 hooks。
+3. 正则全部由脚本生成。原文只看字母、数字和汉字，中间的标点、空格、换行、markdown 一律忽略，所以 `{A'A  A . A}` 能匹配 `AAAA` 或 `A-A A.A`；Read 工具的行号和列表编号会先去掉。换整行时保留原来的缩进和列表符号。
+4. 默认拿上一次完整请求（主会话 + 各子代理的 system、全部消息、工具描述）**按文本块**核对，和 proxy 实际替换的方式一样：命中才加，并给出改前/改后预览。A 和 B 不在同一个文本块里会直接报错（proxy 不能跨块替换）。`auto --no-check …` 或 `autowoc …` 不核对直接加。
 5. 整个过程在 hook 里完成，不进对话历史。每次的记录存在 `~/.claude/context-rewrite/auto/`。
 
 「从 A 到 B」默认连 A 和 B 一起删；只想删中间就说「保留两端」。

@@ -46,6 +46,7 @@ def texts(c):
 
 
 LAST = {}
+SEP = "\x00"  # separates text blocks in a snapshot corpus
 
 
 STATS = {}  # (session, "main" | agent_type) -> {"time", "hits": {rule#: {scope: n}}}
@@ -77,9 +78,10 @@ def build_snapshot(d, headers):
             "agent_type": headers.get("x-claude-code-agent-type") or "main",
             "system": system,
             "messages": [(label, texts(m.get("content"))) for label, m in picks],
-            # the whole request as searchable text, per rewrite scope
-            "corpus": {"system": "\n".join(system), "user": "\n".join(by_role["user"]),
-                       "assistant": "\n".join(by_role["assistant"]), "tools": "\n".join(tools)}}
+            # the whole request as searchable text, per rewrite scope; blocks are joined with SEP because rules are
+            # applied to each text block separately, so a match must not span two blocks
+            "corpus": {"system": SEP.join(system), "user": SEP.join(by_role["user"]),
+                       "assistant": SEP.join(by_role["assistant"]), "tools": SEP.join(tools)}}
 
 
 def snapshot(d, headers):
@@ -121,7 +123,7 @@ def merged_corpus(sid):
         sources.append(name)
         for scope, text in snap["corpus"].items():
             parts.setdefault(scope, []).append(text)
-    return {k: "\n".join(v) for k, v in parts.items()}, sources
+    return {k: SEP.join(v) for k, v in parts.items()}, sources
 
 
 def yrb_processes():

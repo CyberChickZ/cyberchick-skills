@@ -887,37 +887,23 @@ def ui(argv):
     print("\n".join(lines))
 
 
-AUTO_PROMPT = """You convert a text-editing instruction into a Python regex template.
-The user's literal text snippets have been replaced by placeholders {{0}}, {{1}}, ... ({n} placeholder(s) here).
-Each placeholder will later be substituted with an exact, whitespace-tolerant regex for that snippet, so never try to
-guess or spell out their content.
-
-Instruction: {template}
-
-Reply with ONE JSON object and nothing else:
-{{"pattern": "<Python re pattern using the placeholders>", "replace": "<replacement; may use placeholders and \\1-style group refs>", "ignore_case": false}}
-
-Guidance. Snippets are usually PART of a line; work on whole lines unless the instruction clearly targets
-words inside a line. Never glue two lines together.
-- "delete from {{0}} to {{1}}" / "从 {{0}} 到 {{1}} 删除" / "中间删除" -> delete every line from the line containing {{0}}
-  through the line containing {{1}}, both included: pattern "(?m)^[^\\n]*{{0}}[\\s\\S]*?{{1}}[^\\n]*\\n?", replace "".
-  When unsure whether the endpoints are included, include them.
-- only when the instruction explicitly keeps the endpoints ("keep both", "保留两端", "只删中间"): pattern
-  "(?m)(?P<keep>^[^\\n]*{{0}}[^\\n]*\\n)[\\s\\S]*?(?=^[^\\n]*{{1}})", replace "\\g<keep>".
-- "delete the line with {{0}}" / "删除 {{0}}" -> pattern "(?m)^[^\\n]*{{0}}[^\\n]*\\n?", replace "".
-- "replace {{0}} with {{1}}" (words inside a line) -> pattern "{{0}}", replace "{{1}}".
-- In replace, {{i}} re-inserts the original text that {{i}} matched.
-"""
+LLM_SYSTEM = ("You map a text-editing instruction to one option from a fixed list. You have no other context. "
+              "Always reply in English, with exactly one JSON object and nothing else.")
 
 
 def ask_llm(prompt):
-    """One-shot call to Claude (sonnet, low effort) with no tools, settings, plugins or hooks. Returns the reply text."""
+    """One-shot call to Claude (sonnet, low effort) with a bare context: our own system prompt instead of Claude Code's,
+    run in an empty directory with no settings, CLAUDE.md, memory, skills, MCP servers, tools, plugins or hooks.
+    (--bare would be cleaner but only accepts an API key, not a claude.ai login.) Returns the reply text."""
+    import tempfile
     env = {k: v for k, v in os.environ.items()
            if k not in ("ANTHROPIC_BASE_URL", "CTXRW_YRB", "CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT")}
     cmd = [shutil.which("claude") or "claude", "-p", prompt, "--model", "sonnet", "--tools", "",
+           "--system-prompt", LLM_SYSTEM, "--strict-mcp-config", "--disable-slash-commands",
            "--output-format", "json", "--no-session-persistence", "--setting-sources", "",
            "--settings", json.dumps({"effortLevel": "low"})]
-    r = subprocess.run(cmd, capture_output=True, text=True, timeout=80, env=env, stdin=subprocess.DEVNULL)
+    with tempfile.TemporaryDirectory() as empty:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=80, env=env, stdin=subprocess.DEVNULL, cwd=empty)
     try:
         d = json.loads(r.stdout)
     except json.JSONDecodeError:
@@ -982,67 +968,257 @@ def unwrap(text):
     return t
 
 
-def parse_spec(reply):
-    """Pull the JSON object out of the reply; tolerate regex backslashes the model forgot to escape (\\s → \\\\s)."""
+SEP = "\x00"  # the proxy joins text blocks with this; rules apply to one block at a time
+
+
+def blocks(text):
+    return (text or "").split(SEP)
+
+
+# Every auto rule is a SPEC filled into this framework; the regex is always built here, never by the model.
+#   a     index of the {…} snippet to find (required)
+#   b     index of a second snippet: the rule covers everything from a through b (optional)
+#   unit  "text": just the matched words · "line": whole lines · "block": the whole text block containing a
+#   keep  which ends of a range survive: [] (default), ["a"], ["b"] or ["a", "b"]
+#   new   what goes in the place of what's removed: a list of snippet indexes (inserted verbatim) and/or "a" / "b"
+#         (the original text that a / b matched); [] deletes
+# The seven common operations are presets; the model may also fill a spec itself (operation 8).
+OPS = {
+    1: {"spec": {"a": 0, "unit": "text"}, "en": "delete the text {0} (only those words)", "zh": "删掉 {0} 这段文字（只删这些字）"},
+    2: {"spec": {"a": 0, "unit": "line"}, "en": "delete the whole line(s) containing {0}", "zh": "删掉 {0} 所在的整行"},
+    3: {"spec": {"a": 0, "b": 1, "unit": "line"}, "en": "delete from the line with {0} through the line with {1}, both lines included",
+        "zh": "从 {0} 所在行删到 {1} 所在行，两端都删"},
+    4: {"spec": {"a": 0, "b": 1, "unit": "line", "keep": ["a", "b"]},
+        "en": "delete everything between the line with {0} and the line with {1}, keeping both lines",
+        "zh": "删掉 {0} 所在行和 {1} 所在行之间的内容，两端保留"},
+    5: {"spec": {"a": 0, "unit": "text", "new": [1]}, "en": "replace the text {0} with {1}", "zh": "把 {0} 这段文字换成 {1}"},
+    6: {"spec": {"a": 0, "unit": "line", "new": [1]}, "en": "replace the whole line containing {0} with {1}", "zh": "把 {0} 所在的整行换成 {1}"},
+    7: {"spec": {"a": 0, "b": 1, "unit": "line", "new": [2]},
+        "en": "replace everything from the line with {0} through the line with {1} with {2}",
+        "zh": "把 {0} 所在行到 {1} 所在行（含两端）整体换成 {2}"},
+}
+CUSTOM = 8
+LINE = r"[^\n]*"
+PREFIX = r"(?P<ind>[ \t]*)(?P<mk>(?:(?:#{1,6}|>)[ \t]+)?(?:(?:[-*+•·▪◦]|\d{1,3}[.)])[ \t]+)?)"
+MARKER = re.compile(r"\s*(?:#{1,6}\s|>\s|[-*+•·▪◦]\s|\d{1,3}[.)]\s)")
+TRAIL = r"[^\w\s]*"
+
+AUTO_PROMPT = """Pick the operation that matches the user's instruction. {{0}}, {{1}}, ... stand for text snippets
+the user pasted; the instruction has {n} of them.
+
+Instruction: {template}
+
+Operations:
+{ops}
+8. none of the above fits: describe the edit with a spec instead (fields below)
+
+Rules: "from A to B" / "从 A 到 B" / "A 到 B" means a range; unless the instruction clearly says to keep the ends
+("keep", "保留两端", "只删中间"), the ends are included (3, not 4). "delete A" alone means the whole line (2) unless
+it clearly targets just some words inside a line (1). In replace operations the last snippet is the new text.
+
+Reply with ONE JSON object and nothing else: {{"op": <1-7>}}
+or, only for 8: {{"op": 8, "spec": {{"a": <snippet to find>, "b": <optional second snippet: covers a through b>,
+"unit": "text" | "line" | "block", "keep": <ends of the range to keep: [], ["a"], ["b"] or ["a","b"]>,
+"new": <what replaces the removed part: list of snippet numbers and/or "a"/"b" (the original a/b text); [] = delete>}}}}
+unit: "text" = only the matched words, "line" = whole lines, "block" = the whole text block that contains a."""
+
+
+def check_spec(spec, n):
+    """Validate a spec against the framework; returns a clean copy or raises ValueError."""
+    if not isinstance(spec, dict):
+        raise ValueError("spec must be an object")
+    extra = set(spec) - {"a", "b", "unit", "keep", "new"}
+    if extra:
+        raise ValueError(f"unknown field(s) {sorted(extra)}")
+    a, b = spec.get("a"), spec.get("b")
+    unit, keep, new = spec.get("unit", "line"), list(spec.get("keep") or []), list(spec.get("new") or [])
+    if not isinstance(a, int) or not 0 <= a < n:
+        raise ValueError(f"a must be a snippet number 0..{n - 1}")
+    if b is not None and (not isinstance(b, int) or not 0 <= b < n or b == a):
+        raise ValueError(f"b must be another snippet number 0..{n - 1}")
+    if unit not in ("text", "line", "block"):
+        raise ValueError("unit must be text, line or block")
+    if unit == "block" and (b is not None or keep):
+        raise ValueError("unit block takes neither b nor keep")
+    if any(k not in ("a", "b") for k in keep) or (keep and b is None):
+        raise ValueError("keep only applies to a range (a + b) and holds \"a\" / \"b\"")
+    found = {a} | ({b} if b is not None else set())
+    for x in new:
+        if isinstance(x, bool) or not (x in ("a", "b") or isinstance(x, int)):
+            raise ValueError(f"new holds snippet numbers or \"a\"/\"b\", not {x!r}")
+        if x == "b" and b is None:
+            raise ValueError("new uses \"b\" but there is no b")
+        if isinstance(x, int) and (not 0 <= x < n or x in found):
+            raise ValueError(f"new snippet {x} must be a replacement snippet, not one being searched for")
+    used = found | {x for x in new if isinstance(x, int)}
+    if used != set(range(n)):
+        raise ValueError(f"snippet(s) {sorted(set(range(n)) - used)} unused")
+    out = {"a": a, "unit": unit}
+    if b is not None:
+        out["b"] = b
+    if keep:
+        out["keep"] = sorted(set(keep))
+    if new:
+        out["new"] = new
+    return out
+
+
+def spec_text(spec, literals):
+    s = lambda i: "{" + literals[i][:40] + "}"
+    unit = {"text": L("text", "文字"), "line": L("line(s)", "整行"), "block": L("whole block", "整个文本块")}[spec["unit"]]
+    what = s(spec["a"]) + (L(" … through … ", " 到 ") + s(spec["b"]) if "b" in spec else "")
+    keep = spec.get("keep") or []
+    kept = L(", keep ", "，保留 ") + L(" and ", "和").join(s(spec[k]) for k in keep) if keep else ""
+    new = spec.get("new") or []
+    parts = [s(x) if isinstance(x, int) else L("original ", "原来的 ") + s(spec[x]) for x in new]
+    to = (L(" → ", " → 换成 ") + " + ".join(parts)) if parts else L(" → delete", " → 删掉")
+    return f"[{unit}] {what}{kept}{to}"
+
+
+def unwrap_new(text):
+    """Replacement text is inserted exactly as typed (spaces included); only surrounding quotes are dropped."""
+    t = text.strip()
+    return t[1:-1] if len(t) >= 2 and t[0] in WRAP_QUOTES and t[-1] in WRAP_QUOTES else text
+
+
+def build_rule(spec, literals, inserts=None):
+    """(pattern, replace) for a checked spec. Snippet regexes ignore punctuation, spacing and markdown;
+    inserts holds the replacement snippets exactly as typed (defaults to literals)."""
+    inserts = inserts or literals
+    def part(i, name):
+        lead, body = literal_parts(literals[i])
+        return f"(?P<{name}>{lead}{body})"
+    a = part(spec["a"], "a")
+    b = part(spec["b"], "b") if "b" in spec else None
+    keep, new, unit = spec.get("keep") or [], spec.get("new") or [], spec["unit"]
+    ins = "".join(r"\g<" + x + ">" if x in ("a", "b") else inserts[x].replace("\\", "\\\\") for x in new)
+    first_new = next((inserts[x] for x in new if isinstance(x, int)), "")
+    # a replacement line keeps the original indentation, and the original bullet unless it brings its own
+    line_ins = ((r"\g<ind>" if MARKER.match(first_new) else r"\g<ind>\g<mk>") + (ins.lstrip() if MARKER.match(first_new) else ins)) if new else ""
+
+    if unit == "block":
+        return rf"(?s)\A.*?{a}.*\Z", ins
+    if b is None:
+        if unit == "text":
+            if not new:
+                return a, ""
+            lead, body = literal_parts(literals[spec["a"]])  # keep the bullet in front and the punctuation after
+            return f"(?P<lead>{lead})(?P<a>{body[:-len(TRAIL)]})", r"\g<lead>" + ins
+        if not new:
+            return rf"(?m)^{LINE}{a}{LINE}\n?", ""
+        return rf"(?m)^{PREFIX}{LINE}{a}{LINE}", line_ins
+    if unit == "text":
+        return (rf"{a}(?P<mid>[\s\S]*?){b}",
+                (r"\g<a>" if "a" in keep else "") + ins + (r"\g<b>" if "b" in keep else ""))
+    if not keep:  # the two snippets may even sit on the same line
+        if not new:
+            return rf"(?m)^{LINE}{a}[\s\S]*?{b}{LINE}\n?", ""
+        return rf"(?m)^{PREFIX}{LINE}{a}[\s\S]*?{b}{LINE}", line_ins
+    return (rf"(?m)^(?P<ha>{PREFIX}{LINE}{a}{LINE}\n)[\s\S]*?^(?P<hb>{LINE}{b}{LINE}(?:\n|\Z))",
+            (r"\g<ha>" if "a" in keep else "") + (line_ins + "\n" if new else "") + (r"\g<hb>" if "b" in keep else ""))
+
+
+def op_text(i):
+    return OPS[i]["en"]
+
+
+def parse_op(reply, n):
+    """(op, spec) from the model's reply; the spec is validated against the framework."""
     m = re.search(r"\{.*\}", reply, re.S)
-    if not m:
-        raise ValueError(reply[:200])
-    raw = m.group(0)
     try:
-        spec = json.loads(raw)
+        d = json.loads(m.group(0)) if m else {}
     except json.JSONDecodeError:
-        spec = json.loads(re.sub(r'\\(?![\\/"bfnrtu])', r"\\\\", raw))
-    if not isinstance(spec.get("pattern"), str) or not spec["pattern"]:
-        raise ValueError("no pattern")
-    return spec
+        d = {}
+    op = d.get("op")
+    if op is None:
+        mm = re.search(r'"op"\s*:\s*"?(\d+)', reply) or re.search(r"\b([1-8])\b", reply)
+        op = int(mm.group(1)) if mm else None
+    try:
+        op = int(op)
+    except (TypeError, ValueError):
+        raise ValueError(reply[:200])
+    if op == CUSTOM:
+        return op, check_spec(d.get("spec"), n)
+    if op not in OPS:
+        raise ValueError(reply[:200])
+    spec = OPS[op]["spec"]
+    need = max([spec["a"], spec.get("b", -1)] + [x for x in spec.get("new", []) if isinstance(x, int)]) + 1
+    if need != n:
+        raise ValueError(L(f"operation {op} needs {need} snippet(s), the instruction has {n}",
+                           f"操作 {op} 需要 {need} 段 {{…}}，指令里有 {n} 段"))
+    return op, check_spec(spec, n)
+
+
+def block_hits(rx, corpus):
+    """{scope: n} counted block by block, the way the proxy applies rules."""
+    return {k: sum(len(rx.findall(b)) for b in blocks(v)) for k, v in corpus.items()}
+
+
+def first_hit(rx, corpus):
+    for v in corpus.values():
+        for b in blocks(v):
+            m = rx.search(b)
+            if m:
+                return b, m
+    return None, None
+
+
+def excerpt(block, m, replace, ctx=60):
+    before = block[max(0, m.start() - ctx):m.end() + ctx]
+    after = block[max(0, m.start() - ctx):m.start()] + m.expand(replace) + block[m.end():m.end() + ctx]
+    whole = not block[:m.start()].strip() and not block[m.end():].strip() and not m.expand(replace).strip()
+    return before, after, whole
 
 
 def auto_rule(desc):
-    """/context-rewrite auto: literal text goes in {braces} and is copied verbatim by the script; only the
-    remaining instruction goes to the LLM, which returns a regex skeleton; Python assembles and applies it."""
+    """/context-rewrite auto: the text in {braces} is copied verbatim; the model only picks one of OPS for the rest of
+    the instruction; the regex is built here and checked block by block against the last requests."""
     check = True
     m = re.match(r"\s*--(no-?check|check)\b\s*(.*)$", desc, re.S)
     if m:
         check, desc = m.group(1) == "check", m.group(2)
-    literals = [unwrap(x) for x in re.findall(r"\{(.*?)\}", desc, re.S)]
+    raw = re.findall(r"\{(.*?)\}", desc, re.S)
+    literals = [unwrap(x) for x in raw]
     if not literals:
         sys.exit(L("Put the exact text in {braces}; the script copies it verbatim and only the rest goes to the model. E.g.\n"
-                   "  /context-rewrite auto delete from {- Entering financial credentials} to {untrusted sources}, across lines",
+                   "  /context-rewrite auto delete from {- Entering financial credentials} to {untrusted sources}",
                    "把原文放进 {花括号}：脚本逐字复制原文，只把其余的话交给模型。例如：\n"
-                   "  /context-rewrite auto 从 {- Entering financial credentials} 到 {untrusted sources} 中间删除，忽略换行"))
+                   "  /context-rewrite auto 从 {- Entering financial credentials} 到 {untrusted sources} 全部删掉"))
     counter = iter(range(len(literals)))
     template = re.sub(r"\{.*?\}", lambda m: "{" + str(next(counter)) + "}", desc, flags=re.S)
-    try:
-        lit_rx = [literal_regex(t) for t in literals]
-    except ValueError:
-        sys.exit(L("One of the {…} snippets is empty.", "有一个 {…} 是空的。"))
 
-    if check and not fetch_corpus()[0]:
-        sys.exit(L("✗ checking needs a record of the last request: start claude with --yrb and send a message first, or use autowoc (auto --no-check) to add the rule without checking",
-                   "✗ 核对需要上一次请求的记录：先用 --yrb 启动 claude 并发一句话；或者用 autowoc（auto --no-check）不核对直接加"))
-    print(L(f"Instruction sent to the model: {template}", f"交给模型的指令：{template}"))
-    spec, err = None, None
-    for _ in range(2):
-        try:
-            spec = parse_spec(ask_llm(AUTO_PROMPT.format(n=len(literals), template=template)))
-            break
-        except Exception as e:
-            err = e
-    if not spec:
-        sys.exit(L(f"✗ the model didn't return a usable regex: {err}", f"✗ 模型没返回可用的正则: {err}"))
-    pattern_t = spec["pattern"]
-    replace_t = spec.get("replace", "")
-
-    ph = re.compile(r"\{(\d+)\}")
-    used = {int(x) for x in ph.findall(pattern_t) if int(x) < len(literals)}
-    if not used:
-        sys.exit(L(f"✗ the model's pattern uses no placeholder: {pattern_t!r}", f"✗ 模型给的正则没用到任何占位符: {pattern_t!r}"))
     corpus, sources, matched = fetch_corpus() if check else (None, [], False)
     if check and not corpus:
         sys.exit(L("✗ checking needs a record of the last request: start claude with --yrb and send a message first, or use autowoc (auto --no-check) to add the rule without checking",
                    "✗ 核对需要上一次请求的记录：先用 --yrb 启动 claude 并发一句话；或者用 autowoc（auto --no-check）不核对直接加"))
-    if corpus:
-        missing = [i for i in sorted(used) if not any(re.search(lit_rx[i], v) for v in corpus.values())]
+
+    ops = "\n".join(f"{i}. {op_text(i)}" for i in OPS)
+    op, spec, err = None, None, None
+    prompt = AUTO_PROMPT.format(n=len(literals), template=template, ops=ops)
+    for _ in range(2):
+        try:
+            op, spec = parse_op(ask_llm(prompt), len(literals))
+            break
+        except Exception as e:
+            err = e
+            prompt += f"\n\nYour previous reply was rejected: {e}. Reply again."
+    if not op:
+        sys.exit(L(f"✗ couldn't map the instruction to an operation: {err}\n  instruction: {template}",
+                   f"✗ 没能把指令对应到一种操作：{err}\n  指令：{template}"))
+    print(L(f"Operation {op}: ", f"操作 {op}：") + spec_text(spec, literals))
+
+    finds = [spec["a"]] + ([spec["b"]] if "b" in spec else [])
+    try:
+        pattern, replace = build_rule(spec, literals, [unwrap_new(x) for x in raw])
+        rx = re.compile(pattern)
+    except ValueError:
+        sys.exit(L("One of the {…} snippets to search for is empty.", "有一段要查找的 {…} 是空的。"))
+
+    rule = {"find": pattern, "replace": replace, "enabled": True, "regex": True,
+            "auto": {"description": desc, "op": op, "spec": spec}}
+    where = None
+    if corpus is not None:
+        missing = [i for i in finds if not re.search(literal_regex(literals[i]), "".join(corpus.values()))]
         if missing:
             print(L("✗ these snippets are not in the last request (check the copied text; /context-rewrite capture shows the original):",
                     "✗ 这些原文在上一次请求里找不到（检查复制的文字；/context-rewrite capture 可以看原文）："))
@@ -1056,80 +1232,46 @@ def auto_rule(desc):
             if proxy_version() != script_proxy_version():
                 print(L("  ⚠ the running proxy is an old version; run /context-rewrite:doctor to restart it, send one message, then retry",
                         "  ⚠ 正在运行的 proxy 是旧版；先跑 /context-rewrite:doctor 重启它，随便发一句话，再重试"))
-            return
-
-    named = set()
-
-    def to_group(m):
-        i = int(m.group(1))
-        if i >= len(literals):
-            return m.group(0)
-        if i in named:
-            return f"(?:{lit_rx[i]})"
-        named.add(i)
-        lead, body = literal_parts(literals[i])
-        return f"(?P<p{i}>(?P<l{i}>{lead}){body})"
-
-    pattern = ph.sub(to_group, pattern_t)
-    # {i} in the replacement re-inserts the ORIGINAL matched text (not the pasted copy, which may have lost formatting)
-    first = int(ph.search(pattern_t).group(1)) if ph.search(pattern_t) else None
-    replace = ph.sub(lambda m: f"\\g<p{m.group(1)}>" if int(m.group(1)) in named
-                     else literals[int(m.group(1))].replace("\\", "\\\\") if int(m.group(1)) < len(literals) else m.group(0), replace_t)
-    # replacing with new text keeps the original line's bullet/heading marker; deleting drops it
-    if replace and first in named and not replace.startswith("\\g<"):
-        replace = f"\\g<l{first}>" + replace
-    flags = re.I if spec.get("ignore_case") else 0
-    try:
-        rx = re.compile(pattern, flags)
-        rx.sub(replace, "")
-    except re.error as e:
-        sys.exit(L(f"✗ assembled regex is invalid: {e}\n  {pattern[:200]}", f"✗ 拼出来的正则无效: {e}\n  {pattern[:200]}"))
-
-    rule = {"find": pattern, "replace": replace, "enabled": True, "regex": True,
-            "auto": {"description": desc, "template": pattern_t, "replace_template": replace_t}}
-    if spec.get("ignore_case"):
-        rule["ignore_case"] = True
-    if corpus is not None:
-        where = {k: len(rx.findall(v)) for k, v in corpus.items()}
+            sys.exit(1)
+        where = block_hits(rx, corpus)
         if not sum(where.values()):
-            sys.exit(L(f"✗ every snippet exists, but the assembled regex matches nothing, so no rule was added.\n  skeleton from the model: {pattern_t}",
-                       f"✗ 原文都在，但拼出来的正则一处都没命中，没有添加规则。\n  模型给的骨架: {pattern_t}"))
+            if len(finds) == 2:
+                sys.exit(L("✗ both snippets exist, but never inside the same text block with the first before the second "
+                           "(when both ends are kept they must also be on different lines). The proxy rewrites one block at a time, "
+                           "so a range can't span blocks: make one rule per block.",
+                           "✗ 两段原文都在，但不在同一个文本块里、或前后顺序反了（保留两端时还必须在不同行）。proxy 是一块一块替换的，范围不能跨块：每块单独写一条规则。"))
+            sys.exit(L("✗ the snippet exists but the rule matches nothing; no rule was added.", "✗ 原文在，但规则一处都没命中，没有添加。"))
         hit_scopes = [k for k, v in where.items() if v]
-        if hit_scopes == ["system"]:
-            rule["scope"] = ["system"]
-        elif hit_scopes == ["user"]:
-            rule["scope"] = ["user"]
+        if hit_scopes in (["system"], ["user"]):
+            rule["scope"] = hit_scopes
 
     os.makedirs(os.path.join(HOME, "auto"), exist_ok=True)
     with open(os.path.join(HOME, "auto", time.strftime("%Y%m%d-%H%M%S") + ".json"), "w") as f:
-        json.dump({"description": desc, "literals": literals, "template": template,
-                   "llm_pattern": pattern_t, "llm_replace": replace_t, "pattern": pattern, "replace": replace},
-                  f, ensure_ascii=False, indent=2)
+        json.dump({"description": desc, "literals": literals, "template": template, "op": op, "spec": spec,
+                   "pattern": pattern, "replace": replace}, f, ensure_ascii=False, indent=2)
 
     cfg = load()
     cfg["rules"].append(rule)
     save(cfg)
     n = len(cfg["rules"])
-    shown = pattern_t.replace("\n", "\\n")
-    print(L(f"Skeleton from the model: {shown}  →  {replace_t!r}", f"模型给的骨架: {shown}  →  {replace_t!r}"))
-    if corpus is not None:
-        print(L(f"✓ added rule #{n}; in the last request it matches " + ", ".join(f"{k} {v}" for k, v in where.items() if v),
-                f"✓ 已添加规则 #{n}，在上一次请求里命中 " + "，".join(f"{k} {v} 处" for k, v in where.items() if v)))
-    else:
+    if where is None:
         print(L(f"✓ added rule #{n} (--no-check: not verified against the last request)",
                 f"✓ 已添加规则 #{n}（--no-check：没有核对原文）"))
-    if corpus is not None:
-        src = next(v for v in corpus.values() if rx.search(v))
-        m = rx.search(src)
-        before = src[max(0, m.start() - 60):m.end() + 60]
-        after = src[max(0, m.start() - 60):m.start()] + m.expand(replace) + src[m.end():m.end() + 60]
+    else:
+        print(L(f"✓ added rule #{n}; in the last request it matches " + ", ".join(f"{k} {v}" for k, v in where.items() if v),
+                f"✓ 已添加规则 #{n}，在上一次请求里命中 " + "，".join(f"{k} {v} 处" for k, v in where.items() if v)))
+        block, m = first_hit(rx, corpus)
+        before, after, whole = excerpt(block, m, replace)
 
         def clip(t, n=500):
             return t if len(t) <= n else t[:n // 2] + "\n   …\n" + t[-n // 2:]
         bar = "─" * 40
         print(L("Preview (first match, with 60 chars of context):", "预览（第一处命中，前后各带 60 个字符）："))
         print(L("  before:", "  改前：") + f"\n{bar}\n{clip(before)}\n{bar}")
-        print(L("  after:", "  改后：") + f"\n{bar}\n{clip(after)}\n{bar}")
+        if whole:
+            print(L("  after: (this whole text block is removed)", "  改后：（这一整块文本被删掉）"))
+        else:
+            print(L("  after:", "  改后：") + f"\n{bar}\n{clip(after)}\n{bar}")
     print(L(f"Takes effect from the next request. Not what you meant? /context-rewrite rm {n} and rephrase.",
             f"下一次请求生效。理解错了就 /context-rewrite rm {n}，换个说法再来。"))
     warn(cfg)
@@ -1432,18 +1574,15 @@ def verify():
             print(f"\n#{i} ✗ {rule_label(r)}\n   " + L(f"invalid regex: {e}", f"正则无效：{e}"))
             continue
         where, first = [], None
+        repl = r.get("replace", "") if r.get("regex") else r.get("replace", "").replace("\\", "\\\\")
         for name, corpus in sources:
-            for sc in scopes:
-                text = corpus.get(sc) or ""
-                n = len(rx.findall(text))
+            n_by = block_hits(rx, {sc: corpus.get(sc) or "" for sc in scopes})
+            for sc, n in n_by.items():
                 if n:
                     where.append(f"{L('main', '主会话') if name == 'main' else name} {sc} {n}")
-                    if first is None:
-                        m = rx.search(text)
-                        repl = r.get("replace", "")
-                        after_mid = m.expand(repl) if r.get("regex") else repl
-                        first = (text[max(0, m.start() - 60):m.end() + 60],
-                                 text[max(0, m.start() - 60):m.start()] + after_mid + text[m.end():m.end() + 60])
+            if first is None and any(n_by.values()):
+                block, m = first_hit(rx, {sc: corpus.get(sc) or "" for sc in scopes})
+                first = excerpt(block, m, repl)
         actual = {who: sum(st["hits"].get(str(i), {}).values()) for who, st in stats.items()}
         actual_txt = L(", ", "、").join(f"{L('main', '主会话') if w == 'main' else w} {n}" for w, n in actual.items() if n)
         mark = "✓" if where else "⚠"
@@ -1456,7 +1595,7 @@ def verify():
             print("   " + L("actually replaced in the last real request: ", "上一次真实请求里实际替换：") + (actual_txt or "0"))
         if first:
             print("   " + L("before: ", "改前：") + clip(first[0]))
-            print("   " + L("after:  ", "改后：") + clip(first[1]))
+            print("   " + L("after:  ", "改后：") + (L("(whole text block removed)", "（整块文本被删掉）") if first[2] else clip(first[1])))
         if sources and not where and on:
             dead += 1
     if dead:

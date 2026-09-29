@@ -26,7 +26,7 @@ claude --yrb              # combines with other flags: claude --yrb --resume, cl
 ```
 In the session:
 ```
-/context-rewrite auto remove every instruction to add Co-Authored-By   # describe it in one sentence; Claude finds the text, drafts rules, and adds the ones you tick
+/context-rewrite auto delete the line with {Co-Authored-By}          # text in {…}; the model only picks the operation, the script builds the rule
 /context-rewrite verify                                    # check every rule against the last real requests (main + subagents): hits, before/after, actual replacements
 /context-rewrite capture                                   # show the system prompt and injected content actually sent last time (before rewriting), and save it to a file
 /context-rewrite "find" "replace"                          # add a rule by hand, effective from the next request
@@ -41,7 +41,7 @@ In the session:
 ```
 - Commands with complete arguments are run directly by a hook: the result is shown only to you, never enters the conversation, calls no model and costs no tokens
 - `rm` / `toggle` / `scope` / `--scope` without arguments, and `auto`, need Claude to show a menu (AskUserQuestion) or write rules. That turn always uses **sonnet + low effort** (the skill's `model` / `effort` fields); your next message switches back to your own model
-- `auto` gives Claude the original text of the last request as recorded by the proxy, so it copies passages verbatim; when rules are saved, each one is checked against that text and you're warned if it isn't found
+- `auto` never shows the request text to the model; the model only sees the instruction with the snippets taken out and picks an operation
 - Text blocks that become empty after rewriting are dropped (the API rejects empty text blocks); a message emptied entirely keeps a `(removed)` placeholder
 - `/resume`d conversations and subagents inside the same `--yrb` process are rewritten too
 - Sessions not started from your terminal (e.g. background agents) are not rewritten
@@ -64,9 +64,12 @@ Subagents run inside the same claude process, so their requests go through the p
 /context-rewrite auto replace {Creating accounts on the user's behalf} with {Creating accounts is fine}
 ```
 1. The script pulls the text out of each `{…}` verbatim (it never goes through the model, so it can't be mistyped).
-2. Only the remaining instruction (`delete from {0} to {1}`) goes to Claude (sonnet, low effort, no tools), which returns a regex skeleton such as `{0}[\s\S]*?{1}\n?`.
-3. Python substitutes each placeholder with a regex that looks only at letters, digits and CJK characters: all punctuation, whitespace, line breaks and markdown between them are ignored, so `{A'A  A . A}` matches `AAAA` or `A-A A.A`. Read-tool line numbers and list numbering are dropped. Snippets can be part of a line; deletions work on whole lines.
-4. By default it is checked against the whole last request (system, all messages, tool descriptions): added only if it matches, scope set to where it matched, with a before/after preview. `auto --no-check …` or `autowoc …` adds it without checking (no --yrb session needed). `{i}` in the replacement re-inserts the original matched text, not your pasted copy.
+2. The remaining instruction (`delete from {0} to {1}`) goes to Claude (sonnet, low effort, no tools), which **only picks one of 7 operations** and writes no regex:
+   1 delete the text · 2 delete its whole line · 3 delete from line A through line B · 4 delete between line A and line B, keeping both · 5 replace the text with X · 6 replace its whole line with X · 7 replace lines A through B with X
+   If none fits it picks 8 and fills fixed fields only: `a`/`b` (what to find, range end), `unit` (text / line / whole block), `keep` (which ends survive), `new` (which snippets, or the original a/b text, go in). The script validates every field and rejects anything extra, so the model never touches a regex.
+   The call runs bare: a one-line English system prompt replaces Claude Code's, in an empty directory, with no settings, CLAUDE.md, memory, skills, MCP, plugins or hooks.
+3. The script builds the regex. Snippets are matched on letters, digits and CJK characters only: punctuation, whitespace, line breaks and markdown in between are ignored, so `{A'A  A . A}` matches `AAAA` or `A-A A.A`; Read-tool line numbers and list numbering are dropped. Replacing a line keeps its indentation and bullet.
+4. By default it is checked **block by block** (the way the proxy rewrites) against the last full request of the main session and every subagent type: added only if it matches, with a before/after preview. If A and B are in different text blocks it stops with an error, since the proxy can't rewrite across blocks. `auto --no-check …` or `autowoc …` adds it without checking.
 5. Everything runs inside the hook, so nothing enters the conversation. Each run is logged to `~/.claude/context-rewrite/auto/`.
 
 "From A to B" deletes the whole section including A and B; say "keep both ends" to delete only what's between.
