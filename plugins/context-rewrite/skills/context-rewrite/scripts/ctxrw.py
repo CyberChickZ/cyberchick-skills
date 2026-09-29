@@ -391,12 +391,19 @@ def yrb_processes():
                     env = open(f"/proc/{d}/environ", "rb").read().decode("utf-8", "replace").split("\0")
                 except OSError:
                     continue
-                if "CTXRW_YRB=1" in env and marker in env:
+                cmdline = ""
+            try:
+                cmdline = open(f"/proc/{d}/cmdline", "rb").read().decode("utf-8", "replace")
+            except OSError:
+                pass
+            if ("CTXRW_YRB=1" in env and marker in env) or ('"CTXRW_YRB":"1"' in cmdline and f'127.0.0.1:{PORT}"' in cmdline):
                     pids.add(int(d))
     else:
         out = subprocess.run(["ps", "-Eww", "-ax", "-o", "pid=,command="], capture_output=True, text=True).stdout
         for line in out.splitlines():
-            if " CTXRW_YRB=1" in line and (marker + " ") in line + " ":
+            by_env = " CTXRW_YRB=1" in line and (marker + " ") in line + " "
+            by_settings = '"CTXRW_YRB":"1"' in line and f'127.0.0.1:{PORT}"' in line
+            if by_env or by_settings:
                 pids.add(int(line.split(None, 1)[0]))
     return pids - {os.getpid(), os.getppid()}
 
@@ -888,13 +895,15 @@ Instruction: {template}
 Reply with ONE JSON object and nothing else:
 {{"pattern": "<Python re pattern using the placeholders>", "replace": "<replacement; may use placeholders and \\1-style group refs>", "ignore_case": false}}
 
-Guidance (line breaks matter: never glue two lines together):
-- "delete from {{0}} to {{1}}" / "从 {{0}} 到 {{1}} 删除" / "从 {{0}} 到 {{1}} 中间删除" -> the WHOLE section including both
-  snippets: pattern "{{0}}[\\s\\S]*?{{1}}\\n?", replace "". When unsure whether the endpoints are included, include them.
+Guidance. Snippets are usually PART of a line; work on whole lines unless the instruction clearly targets
+words inside a line. Never glue two lines together.
+- "delete from {{0}} to {{1}}" / "从 {{0}} 到 {{1}} 删除" / "中间删除" -> delete every line from the line containing {{0}}
+  through the line containing {{1}}, both included: pattern "(?m)^[^\\n]*{{0}}[\\s\\S]*?{{1}}[^\\n]*\\n?", replace "".
+  When unsure whether the endpoints are included, include them.
 - only when the instruction explicitly keeps the endpoints ("keep both", "保留两端", "只删中间"): pattern
-  "{{0}}\\n[\\s\\S]*?\\n(?={{1}})", replace "{{0}}\\n".
-- "replace {{0}} with {{1}}" -> pattern "{{0}}", replace "{{1}}".
-- "delete {{0}}" -> pattern "{{0}}\\n?", replace "".
+  "(?m)(?P<keep>^[^\\n]*{{0}}[^\\n]*\\n)[\\s\\S]*?(?=^[^\\n]*{{1}})", replace "\\g<keep>".
+- "delete the line with {{0}}" / "删除 {{0}}" -> pattern "(?m)^[^\\n]*{{0}}[^\\n]*\\n?", replace "".
+- "replace {{0}} with {{1}}" (words inside a line) -> pattern "{{0}}", replace "{{1}}".
 - In replace, {{i}} re-inserts the original text that {{i}} matched.
 """
 
@@ -935,28 +944,29 @@ def _char_rx(c):
     return re.escape(c)
 
 
-def literal_regex(text):
-    """Regex for a pasted snippet that tolerates what copy/paste loses or changes: line breaks, indentation and
-    terminal wrapping; curly vs straight quotes; dash variants; … vs ...; markdown markers (** _ ` ~ #, >);
-    list bullets and numbering; terminal box-drawing prefixes and Read-tool line numbers."""
-    first = text.lstrip().splitlines()[0] if text.strip() else ""
-    has_prefix = bool(re.match(r"\s*(?:\d+(?:\t|→))?\s*(?:[│┃⎿▏]\s*)?(?:#{1,6}\s|>\s|[-*+•·▪◦]\s|\d{1,3}[.)]\s)", first))
+LEAD = r"(?:(?:#{1,6}|>)[ \t]+)?(?:(?:[-*+•·▪◦]|\d{1,3}[.)])[ \t]+)?[*_`~]*"
+
+
+def literal_parts(text):
+    """(lead, body) regexes for a pasted snippet. The body looks only at letters, digits and CJK characters:
+    punctuation, whitespace, line breaks and markdown between them are ignored, so {A'A  A . A} matches "AAAA",
+    "A-A A.A", "**A** A…A". Read-tool line numbers and list numbering are dropped first. The lead matches an
+    optional bullet / heading / markdown marker in front, and the body also takes trailing punctuation, so a
+    deletion doesn't leave stubs like "- " or "." behind."""
     lines = []
     for line in text.splitlines():
         line = re.sub(r"^\s*\d+(?:\t|→)", "", line)
-        line = re.sub(r"[│┃⎿▏]", " ", line)
-        line = re.sub(r"^\s*(?:#{1,6}|>)\s+", "", line)
-        line = re.sub(r"^\s*(?:[-*+•·▪◦]|\d{1,3}[.)])\s+", "", line)
+        line = re.sub(r"^\s*(?:[│┃⎿▏]\s*)*(?:#{1,6}\s+|>\s+)?(?:[-*+•·▪◦]\s+|\d{1,3}[.)]\s+)?", "", line)
         lines.append(line)
-    t = re.sub(r"[*_`~]", "", " ".join(lines).replace("...", "…"))
-    toks = t.split()
-    if not toks:
+    chars = [c for c in " ".join(lines) if c.isalnum()]
+    if not chars:
         raise ValueError("empty")
-    heading = r"(?:(?:#{1,6}|>)\s+)?"
-    parts = [MARK + MARK.join(_char_rx(c) for c in tok) + MARK for tok in toks]
-    # a leading bullet/heading marker is only part of the match if the pasted text started with one
-    lead = heading + BULLET if has_prefix else ""
-    return lead + (r"\s*" + heading + BULLET).join(parts)
+    return LEAD, r"[\W_]*".join(re.escape(c) for c in chars) + r"[^\w\s]*"
+
+
+def literal_regex(text):
+    lead, body = literal_parts(text)
+    return lead + body
 
 
 WRAP_QUOTES = "'\"‘’“”`「」『』"
@@ -1055,12 +1065,17 @@ def auto_rule(desc):
         if i in named:
             return f"(?:{lit_rx[i]})"
         named.add(i)
-        return f"(?P<p{i}>{lit_rx[i]})"
+        lead, body = literal_parts(literals[i])
+        return f"(?P<p{i}>(?P<l{i}>{lead}){body})"
 
     pattern = ph.sub(to_group, pattern_t)
     # {i} in the replacement re-inserts the ORIGINAL matched text (not the pasted copy, which may have lost formatting)
+    first = int(ph.search(pattern_t).group(1)) if ph.search(pattern_t) else None
     replace = ph.sub(lambda m: f"\\g<p{m.group(1)}>" if int(m.group(1)) in named
                      else literals[int(m.group(1))].replace("\\", "\\\\") if int(m.group(1)) < len(literals) else m.group(0), replace_t)
+    # replacing with new text keeps the original line's bullet/heading marker; deleting drops it
+    if replace and first in named and not replace.startswith("\\g<"):
+        replace = f"\\g<l{first}>" + replace
     flags = re.I if spec.get("ignore_case") else 0
     try:
         rx = re.compile(pattern, flags)

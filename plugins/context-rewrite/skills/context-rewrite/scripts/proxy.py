@@ -129,12 +129,18 @@ def yrb_processes():
                 env = open(f"/proc/{d}/environ", "rb").read().decode("utf-8", "replace").split("\0")
             except OSError:
                 continue
-            if "CTXRW_YRB=1" in env and marker in env:
+            try:
+                cmdline = open(f"/proc/{d}/cmdline", "rb").read().decode("utf-8", "replace")
+            except OSError:
+                cmdline = ""
+            if ("CTXRW_YRB=1" in env and marker in env) or ('"CTXRW_YRB":"1"' in cmdline and f'127.0.0.1:{PORT}"' in cmdline):
                 pids.add(int(d))
         return pids
     out = subprocess.run(["ps", "-Eww", "-ax", "-o", "pid=,command="], capture_output=True, text=True).stdout
     for line in out.splitlines():
-        if " CTXRW_YRB=1" in line and (marker + " ") in line + " ":
+        by_env = " CTXRW_YRB=1" in line and (marker + " ") in line + " "
+        by_settings = '"CTXRW_YRB":"1"' in line and f'127.0.0.1:{PORT}"' in line  # daemon-hosted: passed via --settings
+        if by_env or by_settings:
             pids.add(int(line.split(None, 1)[0]))
     return pids
 

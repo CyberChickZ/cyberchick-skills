@@ -64,7 +64,7 @@ Subagents run inside the same claude process, so their requests go through the p
 ```
 1. The script pulls the text out of each `{…}` verbatim (it never goes through the model, so it can't be mistyped).
 2. Only the remaining instruction (`delete from {0} to {1}`) goes to Claude (sonnet, low effort, no tools), which returns a regex skeleton such as `{0}[\s\S]*?{1}\n?`.
-3. Python substitutes each placeholder with a forgiving regex for the pasted text: line breaks / indentation / terminal wrapping, curly vs straight quotes, dash variants, `…` vs `...`, lost or extra markdown (`**`, `` ` ``, `_`, `#`, `>`), list bullets and numbering, terminal `│ ⎿` prefixes and Read-tool line numbers are all ignored.
+3. Python substitutes each placeholder with a regex that looks only at letters, digits and CJK characters: all punctuation, whitespace, line breaks and markdown between them are ignored, so `{A'A  A . A}` matches `AAAA` or `A-A A.A`. Read-tool line numbers and list numbering are dropped. Snippets can be part of a line; deletions work on whole lines.
 4. By default it is checked against the whole last request (system, all messages, tool descriptions): added only if it matches, scope set to where it matched, with a before/after preview. `auto --no-check …` or `autowoc …` adds it without checking (no --yrb session needed). `{i}` in the replacement re-inserts the original matched text, not your pasted copy.
 5. Everything runs inside the hook, so nothing enters the conversation. Each run is logged to `~/.claude/context-rewrite/auto/`.
 

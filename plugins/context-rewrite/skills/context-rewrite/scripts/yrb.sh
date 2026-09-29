@@ -50,6 +50,9 @@ claude() {
   (
     python3 "$d/ctxrw.py" start --quiet || exit 1
     export ANTHROPIC_BASE_URL="http://127.0.0.1:${CTXRW_PORT:-8787}" CTXRW_YRB=1
+    # Sessions hosted by the Claude Code daemon (Remote Control, background sessions) don't inherit this shell's
+    # environment, but --settings does carry over, so pass the same variables through it as well.
+    args=(--settings "{\"env\":{\"ANTHROPIC_BASE_URL\":\"$ANTHROPIC_BASE_URL\",\"CTXRW_YRB\":\"1\"}}" "${args[@]}")
     if typeset -f ctxrw_orig_claude >/dev/null 2>&1; then ctxrw_orig_claude "${args[@]}"; else command claude "${args[@]}"; fi
     rc=$?
     # claude has exited: stop the proxy right away if this was the last --yrb session
