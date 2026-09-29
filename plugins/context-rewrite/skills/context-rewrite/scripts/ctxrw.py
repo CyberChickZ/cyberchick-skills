@@ -82,7 +82,7 @@ Setup
   uninstall                    remove everything: --yrb, proxy, rules, and the plugin itself
   doctor                       check every part and fix what can be fixed automatically
 
-Snapshots (taken automatically before rules or rc files change; the last 30 are kept)
+Snapshots (taken automatically before rules or rc files change; unchanged content isn't saved twice; at most 30, and ones older than 30 days are dropped except the newest 5)
   snapshots                    list snapshots
   snapshot [name]              take one manually
   restore [n]                  roll back to a snapshot; without n, list them. Runs without the model, so it works even when requests are failing
@@ -129,7 +129,7 @@ Commands that open a menu need Claude to show it, which costs one model call."""
   uninstall                    彻底卸载：--yrb、proxy、规则、插件本身
   doctor                       检查每个环节，能修的自动修好
 
-快照（改规则、改 rc 之前都会自动存一份，保留最近 30 份）
+快照（改规则、改 rc 之前自动存；内容没变不重复存；最多 30 份，超过 30 天的自动删，但最新 5 份总会保留）
   snapshots                    列出快照
   snapshot [名字]              手动存一份
   restore [序号]               恢复到某个快照；不写序号就列出快照。不经过模型，对话报错时也能用
@@ -165,7 +165,9 @@ AI 编写
 
 PIDFILE = os.path.join(HOME, "proxy.pid")
 SNAP_DIR = os.path.join(HOME, "snapshots")
-SNAP_KEEP = 30
+SNAP_KEEP = 30  # at most this many
+SNAP_DAYS = 30  # older ones are dropped automatically...
+SNAP_MIN = 5    # ...but the newest few always stay
 ACTION = {"name": ""}
 
 COMMANDS = {"verify", "stop-if-idle", "autowoc", "snapshot", "snapshots", "restore", "doctor", "on", "off", "status", "list", "add", "add-json", "auto", "rm", "toggle", "scope", "start", "install", "capture", "uninstall", "hook", "ui"}
@@ -202,6 +204,9 @@ def take_snapshot(action, rcs=()):
             files["rc-" + os.path.basename(rc).lstrip(".")] = rc
     if not files:
         return None
+    newest = (list_snapshots() or [None])[0]
+    if newest and snapshot_files(newest["id"]) == {n: open(p, "rb").read() for n, p in files.items()}:
+        return newest["id"]  # nothing changed since the last snapshot
     now = datetime.datetime.now()
     sid = now.strftime("%Y%m%d-%H%M%S-%f")[:-3]
     d = os.path.join(SNAP_DIR, sid)
@@ -215,10 +220,39 @@ def take_snapshot(action, rcs=()):
     with open(os.path.join(d, "meta.json"), "w") as f:
         json.dump({"time": now.strftime("%Y-%m-%d %H:%M:%S"), "action": action or "",
                    "files": files, "rules": n_rules}, f, ensure_ascii=False, indent=2)
-    snaps = list_snapshots()
-    for old in snaps[SNAP_KEEP:]:
-        shutil.rmtree(os.path.join(SNAP_DIR, old["id"]), ignore_errors=True)
+    prune_snapshots()
     return sid
+
+
+def snapshot_files(sid):
+    d = os.path.join(SNAP_DIR, sid)
+    try:
+        return {n: open(os.path.join(d, n), "rb").read() for n in os.listdir(d) if n != "meta.json"}
+    except OSError:
+        return None
+
+
+def prune_snapshots():
+    """Automatic housekeeping: drop a snapshot identical to the next newer one (restoring either gives the same
+    files), anything past SNAP_KEEP, and anything older than SNAP_DAYS beyond the newest SNAP_MIN.
+    Returns how many were removed."""
+    import datetime
+    snaps = list_snapshots()
+    cutoff = (datetime.datetime.now() - datetime.timedelta(days=SNAP_DAYS)).strftime("%Y-%m-%d %H:%M:%S")
+    drop, newer = [], None
+    for s in snaps:
+        files = snapshot_files(s["id"])
+        if newer is not None and files == newer:
+            drop.append(s["id"])
+            continue
+        newer = files
+    kept = [s for s in snaps if s["id"] not in drop]
+    for i, s in enumerate(kept):
+        if i >= SNAP_KEEP or (i >= SNAP_MIN and s["time"] < cutoff):
+            drop.append(s["id"])
+    for sid in drop:
+        shutil.rmtree(os.path.join(SNAP_DIR, sid), ignore_errors=True)
+    return len(drop)
 
 
 def list_snapshots():
@@ -1498,8 +1532,11 @@ def doctor():
     else:
         ok(L("no leftovers from old versions", "没有旧版残留"))
 
-    snaps = list_snapshots()
     print(L("\n[snapshots]", "\n[快照]"))
+    pruned = prune_snapshots()
+    if pruned:
+        fix(L(f"cleaned up {pruned} duplicate or expired snapshot(s)", f"清理了 {pruned} 份重复或过期的快照"))
+    snaps = list_snapshots()
     if snaps:
         ok(L(f"{len(snaps)} snapshots, newest {snaps[0]['time']} ({snaps[0]['action']}). Roll back: /context-rewrite restore",
              f"{len(snaps)} 份快照，最新 {snaps[0]['time']}（{snaps[0]['action']}）。回滚: /context-rewrite restore"))

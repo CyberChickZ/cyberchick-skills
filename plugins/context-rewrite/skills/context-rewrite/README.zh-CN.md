@@ -85,7 +85,7 @@ claude --yrb              # 可以和其他参数叠加：claude --yrb --resume�
 ## 坏了怎么恢复
 **插件更新后不用 /reload-plugins：** 旧会话里的命令会自动改用最新安装版本的脚本。只有新增命令或 hooks 变了才需要 reload 一次，`doctor` 会告诉你要不要。
 
-**自动快照：** 改规则（加、删、开关、改范围）和 `install` 修改 rc 之前，都会自动存一份快照，保留最近 30 份，放在 `~/.claude/context-rewrite/snapshots/`。
+**自动快照：** 改规则（加、删、开关、改范围）和 `install` 修改 rc 之前，都会自动存一份快照，自动管理：内容没变不重复存，和下一份完全相同的会合并掉，最多 30 份，超过 30 天的自动删（最新 5 份总会保留），放在 `~/.claude/context-rewrite/snapshots/`。
 
 ```
 /context-rewrite restore        # 列出快照

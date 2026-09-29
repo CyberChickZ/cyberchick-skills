@@ -86,7 +86,7 @@ What it can't fix, it explains: this session isn't `--yrb`, or the port is taken
 ## Recovering from a broken state
 **No /reload-plugins after updates:** commands in an already-open session automatically run the newest installed scripts. Only new commands or changed hooks need one reload, and `doctor` tells you when.
 
-**Automatic snapshots:** before rules change (add, delete, toggle, scope) and before `install` modifies an rc file, a snapshot is saved automatically. The last 30 are kept in `~/.claude/context-rewrite/snapshots/`.
+**Automatic snapshots:** before rules change (add, delete, toggle, scope) and before `install` modifies an rc file, a snapshot is saved automatically. They manage themselves: unchanged content isn't saved again, a snapshot identical to the next one is dropped, at most 30 are kept, and ones older than 30 days are removed (the newest 5 always stay). Stored in `~/.claude/context-rewrite/snapshots/`.
 
 ```
 /context-rewrite restore             # list snapshots
