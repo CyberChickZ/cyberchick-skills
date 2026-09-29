@@ -166,7 +166,7 @@ SNAP_DIR = os.path.join(HOME, "snapshots")
 SNAP_KEEP = 30
 ACTION = {"name": ""}
 
-COMMANDS = {"autowoc", "snapshot", "snapshots", "restore", "doctor", "on", "off", "status", "list", "add", "add-json", "auto", "rm", "toggle", "scope", "start", "install", "capture", "uninstall", "hook", "ui"}
+COMMANDS = {"stop-if-idle", "autowoc", "snapshot", "snapshots", "restore", "doctor", "on", "off", "status", "list", "add", "add-json", "auto", "rm", "toggle", "scope", "start", "install", "capture", "uninstall", "hook", "ui"}
 SCOPES = ("system", "user", "assistant", "tools")
 SUBCOMMAND_SKILLS = {"install", "uninstall", "auto", "autowoc", "add", "capture", "list", "rm", "toggle", "scope", "on", "off",
                      "status", "doctor", "restore", "snapshots", "snapshot"}
@@ -378,6 +378,36 @@ def install():
     print(L("Note: source must run in your own terminal, outside claude; running it with ! inside the conversation has no effect.",
             "注意：source 必须在 claude 外面、你自己的终端里执行；在对话里用 ! 执行没有用。"))
     print(L("From then on, just run claude --yrb in any new terminal.", "之后新开的终端里直接 claude --yrb 就行。"))
+
+
+def yrb_processes():
+    """PIDs whose environment says they were started via `claude --yrb` for this port."""
+    marker = f"ANTHROPIC_BASE_URL=http://127.0.0.1:{PORT}"
+    pids = set()
+    if os.path.isdir("/proc"):
+        for d in os.listdir("/proc"):
+            if d.isdigit():
+                try:
+                    env = open(f"/proc/{d}/environ", "rb").read().decode("utf-8", "replace").split("\0")
+                except OSError:
+                    continue
+                if "CTXRW_YRB=1" in env and marker in env:
+                    pids.add(int(d))
+    else:
+        out = subprocess.run(["ps", "-Eww", "-ax", "-o", "pid=,command="], capture_output=True, text=True).stdout
+        for line in out.splitlines():
+            if " CTXRW_YRB=1" in line and (marker + " ") in line + " ":
+                pids.add(int(line.split(None, 1)[0]))
+    return pids - {os.getpid(), os.getppid()}
+
+
+def stop_if_idle():
+    """Called by the --yrb wrapper right after claude exits: stop the proxy if no other --yrb session is left."""
+    if not running():
+        return
+    time.sleep(0.5)
+    if not yrb_processes():
+        stop_proxy()
 
 
 def stop_proxy():
@@ -1340,6 +1370,9 @@ def main(argv):
         return
     if cmd == "start":
         start()
+        return
+    if cmd == "stop-if-idle":
+        stop_if_idle()
         return
     if cmd == "doctor":
         doctor()

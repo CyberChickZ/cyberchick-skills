@@ -13,7 +13,6 @@ from urllib.parse import urlsplit
 HOME = os.path.expanduser(os.environ.get("CTXRW_HOME") or os.path.join(os.environ.get("CLAUDE_CONFIG_DIR") or "~/.claude", "context-rewrite"))
 RULES = os.path.join(HOME, "rules.json")
 LOG = os.path.join(HOME, "proxy.log")
-SESSIONS = os.path.join(HOME, "sessions")
 PORT = int(os.environ.get("CTXRW_PORT", "8787"))
 UPSTREAM = urlsplit(os.environ.get("CTXRW_UPSTREAM", "https://api.anthropic.com"))
 HOP = {"connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te",
@@ -75,28 +74,45 @@ def snapshot(d, headers):
     LAST["__latest__"] = sid
 
 
+def yrb_processes():
+    """PIDs of processes started via `claude --yrb` for THIS proxy: their environment carries CTXRW_YRB=1 and
+    ANTHROPIC_BASE_URL pointing at our port (claude itself and anything it spawned)."""
+    import subprocess
+    marker = f"ANTHROPIC_BASE_URL=http://127.0.0.1:{PORT}"
+    pids = set()
+    if os.path.isdir("/proc"):
+        for d in os.listdir("/proc"):
+            if not d.isdigit():
+                continue
+            try:
+                env = open(f"/proc/{d}/environ", "rb").read().decode("utf-8", "replace").split("\0")
+            except OSError:
+                continue
+            if "CTXRW_YRB=1" in env and marker in env:
+                pids.add(int(d))
+        return pids
+    out = subprocess.run(["ps", "-Eww", "-ax", "-o", "pid=,command="], capture_output=True, text=True).stdout
+    for line in out.splitlines():
+        if " CTXRW_YRB=1" in line and (marker + " ") in line + " ":
+            pids.add(int(line.split(None, 1)[0]))
+    return pids
+
+
+ACTIVE = {"n": 0, "last": time.time()}
+
+
 def watchdog(srv):
-    started, known = time.time(), set()
+    started = time.time()
     while True:
         time.sleep(10)
+        if ACTIVE["n"] or time.time() - ACTIVE["last"] < 30 or time.time() - started < 30:
+            continue
         try:
-            known |= {int(n) for n in os.listdir(SESSIONS) if n.isdigit()}
-        except OSError:
-            pass
-        alive = set()
-        for pid in known:
-            try:
-                os.kill(pid, 0)
-                alive.add(pid)
-            except ProcessLookupError:
-                try:
-                    os.remove(os.path.join(SESSIONS, str(pid)))
-                except OSError:
-                    pass
-            except PermissionError:
-                alive.add(pid)
-        known = alive
-        if not alive and time.time() - started > 30:
+            alive = yrb_processes()
+        except Exception as e:
+            log(f"watchdog: could not list processes ({e}); staying up")
+            continue
+        if not alive:
             log("no live --yrb sessions, proxy exiting")
             srv.shutdown()
             return
@@ -189,6 +205,16 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
     def _proxy(self):
+        if self.path.startswith("/__ctxrw/"):  # internal status calls don't count as session activity
+            return self._handle()
+        ACTIVE["n"] += 1
+        try:
+            self._handle()
+        finally:
+            ACTIVE["n"] -= 1
+            ACTIVE["last"] = time.time()
+
+    def _handle(self):
         n = int(self.headers.get("Content-Length") or 0)
         data = self.rfile.read(n) if n else b""
         path, _, query = self.path.partition("?")

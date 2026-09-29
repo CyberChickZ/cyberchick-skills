@@ -48,9 +48,12 @@ claude() {
     return
   fi
   (
-    mkdir -p "$d/sessions" && sh -c ': > "$1/$PPID"' _ "$d/sessions"
     python3 "$d/ctxrw.py" start --quiet || exit 1
     export ANTHROPIC_BASE_URL="http://127.0.0.1:${CTXRW_PORT:-8787}" CTXRW_YRB=1
     if typeset -f ctxrw_orig_claude >/dev/null 2>&1; then ctxrw_orig_claude "${args[@]}"; else command claude "${args[@]}"; fi
+    rc=$?
+    # claude has exited: stop the proxy right away if this was the last --yrb session
+    env -u CTXRW_YRB -u ANTHROPIC_BASE_URL python3 "$d/ctxrw.py" stop-if-idle >/dev/null 2>&1
+    exit $rc
   )
 }
