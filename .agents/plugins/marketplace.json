@@ -5,6 +5,18 @@
   },
   "plugins": [
     {
+      "name": "ai-job-search",
+      "source": {
+        "source": "local",
+        "path": "./plugins/ai-job-search"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    },
+    {
       "name": "council",
       "source": {
         "source": "local",
