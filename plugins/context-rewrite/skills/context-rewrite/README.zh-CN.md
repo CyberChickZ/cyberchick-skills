@@ -28,6 +28,7 @@ claude --yrb              # 可以和其他参数叠加：claude --yrb --resume�
 ```
 /context-rewrite auto 删掉 {Co-Authored-By} 所在的行                  # 原文放 {…}，模型只选操作，脚本生成规则
 /context-rewrite verify                                    # 逐条核对规则：上一次真实请求（主会话 + 子代理）里命中哪里、改前改后、proxy 实际替换几处
+/context-rewrite capture --raw                             # 原样的请求：全部 HTTP 头 + 整个 JSON body，按结构列出，完整内容存到 raw/
 /context-rewrite capture                                   # 显示上一次实际发出去的 system prompt 和注入内容（替换前原文），同时存成文件
 /context-rewrite "原文" "替换"                              # 手动加规则，下一次请求就生效
 /context-rewrite "原文" "替换" --scope                      # --scope 后面不写：弹出选择框选替换位置

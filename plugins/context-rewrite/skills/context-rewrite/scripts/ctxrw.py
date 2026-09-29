@@ -99,6 +99,7 @@ AI-written rules
 Find the original text
   verify                       check every rule: where it matches in the last requests, before/after, and how many replacements the proxy actually made
   capture                      show the system prompt and injected content actually sent in the last request (before rewriting), and save it to a file
+  capture --raw                the last request exactly as sent: every HTTP header + the whole JSON body (outlined; full copy saved to a file)
 
 Rules
   "find" "replace" [options]   add a rule, effective from the next request ("add" is optional)
@@ -144,6 +145,7 @@ AI 编写
 找原文
   verify                       逐条检查规则：在上一次请求里命中哪里、改前改后，以及 proxy 实际替换了几处
   capture                      显示上一次实际发出去的 system prompt 和注入内容（替换前），并存成文件
+  capture --raw                原样的上一次请求：全部 HTTP 头 + 整个 JSON body（按结构列出，完整内容存成文件）
 
 规则
   "原文" "替换" [选项]          加一条规则，下一次请求生效（add 可省略）
@@ -704,7 +706,101 @@ def snapshot_text(res, bar="─" * 60, english=False):
     return "\n".join(out)
 
 
+def raw_outline(rec, body):
+    """Structure of a raw request: every header, the small top-level fields in full, and one line per system block,
+    tool and message (type, size, cache_control, first line)."""
+    def first(t, n=90):
+        t = (t or "").strip().split("\n", 1)[0]
+        return t if len(t) <= n else t[:n] + "…"
+
+    def blk(b):
+        if not isinstance(b, dict):
+            return f"{type(b).__name__} {len(str(b))}"
+        t = b.get("type")
+        cc = " cache_control=" + json.dumps(b["cache_control"]) if b.get("cache_control") else ""
+        if t == "text":
+            return f"text {len(b['text'])} chars{cc} | {first(b['text'])}"
+        if t == "tool_use":
+            return f"tool_use {b.get('name')}{cc}"
+        if t == "tool_result":
+            c = b.get("content")
+            n = len(c) if isinstance(c, str) else sum(len(json.dumps(x, ensure_ascii=False)) for x in c or [])
+            return f"tool_result {n} chars{cc}"
+        return f"{t} {len(json.dumps(b, ensure_ascii=False))} chars{cc}"
+
+    out = [f"{rec['method']} {rec['path']}   ({rec['time']})", "", "══ HTTP headers ══"]
+    out += [f"{k}: {v}" for k, v in rec["headers"]]
+    out += ["", "══ body: top-level fields ══"]
+    for k, v in body.items():
+        if k in ("system", "tools", "messages"):
+            n = len(v) if isinstance(v, list) else 1
+            out.append(f"{k}: [{n} item(s), {len(json.dumps(v, ensure_ascii=False))} chars]")
+        else:
+            out.append(f"{k}: {json.dumps(v, ensure_ascii=False)}")
+    sysv = body.get("system")
+    if sysv is not None:
+        out += ["", "══ system ══"]
+        out += [f"  [{i}] {blk(b)}" for i, b in enumerate(sysv if isinstance(sysv, list) else [{"type": "text", "text": sysv}])]
+    if body.get("tools"):
+        out += ["", f"══ tools ({len(body['tools'])}) ══"]
+        for t in body["tools"]:
+            extra = " defer_loading" if t.get("defer_loading") else ""
+            extra += " cache_control" if t.get("cache_control") else ""
+            name = t.get("name") or t.get("type")
+            out.append(f"  {name}  ({len(t.get('description') or '')} chars description{extra})")
+    msgs = body.get("messages") or []
+    if msgs:
+        out += ["", f"══ messages ({len(msgs)}) ══"]
+        for i, m in enumerate(msgs):
+            c = m.get("content")
+            blocks = [blk(b) for b in c] if isinstance(c, list) else [f"text {len(c or '')} chars | {first(c)}"]
+            out.append(f"  [{i}] {m.get('role')}: " + ("" if len(blocks) == 1 else f"{len(blocks)} blocks"))
+            out += [f"      - {b}" for b in blocks]
+    return "\n".join(out)
+
+
+def capture_raw(agent):
+    sid = os.environ.get("CTXRW_SESSION_ID", "")
+    res = proxy_get("/__ctxrw/raw", session=sid, **({"agent": agent} if agent else {}))
+    if res is None:
+        sys.exit(L("the proxy is too old for --raw: run /context-rewrite:doctor, send one message, then retry",
+                   "proxy 版本太旧，不支持 --raw：先跑 /context-rewrite:doctor，发一句话，再重试"))
+    rec = res.get("raw")
+    if not rec:
+        seen = ", ".join(res.get("agents") or []) or L("none yet", "还没有")
+        sys.exit(L(f"No request recorded yet{' for ' + agent if agent else ''}. Recorded subagent types: {seen}",
+                   f"还没有记录到{'子代理 ' + agent + ' 的' if agent else ''}请求。已记录的子代理类型：{seen}"))
+    try:
+        body = json.loads(rec["body"])
+    except json.JSONDecodeError:
+        body = None
+    d = os.path.join(HOME, "raw")
+    os.makedirs(d, exist_ok=True)
+    stem = os.path.join(d, time.strftime("%Y%m%d-%H%M%S") + "-" + re.sub(r"\W+", "_", agent or "main"))
+    with open(stem + ".json", "w") as f:
+        json.dump({"method": rec["method"], "path": rec["path"], "time": rec["time"], "headers": dict(rec["headers"]),
+                   "body": body if body is not None else rec["body"]}, f, ensure_ascii=False, indent=2)
+    files = [stem + ".json"]
+    if rec.get("sent"):
+        with open(stem + "-sent.json", "w") as f:
+            json.dump(json.loads(rec["sent"]), f, ensure_ascii=False, indent=2)
+        files.append(stem + "-sent.json")
+    if not res.get("matched"):
+        print(L("⚠ No record for this session; showing the most recent --yrb session's request instead\n",
+                "⚠ 没找到当前会话的记录，下面是最近一个 --yrb 会话的请求\n"))
+    print(L("The last request exactly as Claude Code sent it to the proxy (before rewriting). Secret headers are masked.\n",
+            "Claude Code 发给 proxy 的上一次请求原样（替换之前）。带密钥的请求头已隐藏。\n"))
+    print(raw_outline(rec, body) if isinstance(body, dict) else rec["body"][:2000])
+    print("\n" + L("Full request (every header + the whole JSON body): ", "完整请求（全部请求头 + 整个 JSON body）：") + files[0])
+    if len(files) > 1:
+        print(L("What was actually forwarded after your rules: ", "按规则替换后实际转发出去的 body：") + files[1])
+    else:
+        print(L("No rule changed this request, so it was forwarded exactly as above.", "没有规则改到这次请求，转发出去的和上面完全一样。"))
+
+
 def capture(args=()):
+    raw_mode = "--raw" in args
+    args = [a for a in args if a != "--raw"]
     if os.environ.get("CLAUDECODE") and not yrb_session():
         sys.exit(L("capture only works in a session started with claude --yrb (normal sessions don't go through the proxy)",
                    "capture 只能在用 claude --yrb 启动的会话里用（普通会话不经过 proxy）"))
@@ -713,6 +809,8 @@ def capture(args=()):
     agent = parse_agent(args) if args else None
     if args and not agent:
         sys.exit(L("Usage: /context-rewrite:capture [@subagent]  (type @ and pick the subagent)", "用法：/context-rewrite:capture [@子代理]（输入 @ 选子代理）"))
+    if raw_mode:
+        return capture_raw(agent)
     sid = os.environ.get("CTXRW_SESSION_ID", "")
     if agent:
         res = proxy_get("/__ctxrw/last", session=sid, agent=agent)

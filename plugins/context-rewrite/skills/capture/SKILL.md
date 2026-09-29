@@ -1,7 +1,7 @@
 ---
 name: capture
 description: "context-rewrite: Show the system prompt and injected text actually sent in the last request (before rewriting); @subagent shows that subagent's last request."
-argument-hint: "[@subagent]"
+argument-hint: "[--raw] [@subagent]"
 disable-model-invocation: true
 model: sonnet
 effort: low

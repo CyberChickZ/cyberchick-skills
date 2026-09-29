@@ -28,6 +28,7 @@ In the session:
 ```
 /context-rewrite auto delete the line with {Co-Authored-By}          # text in {…}; the model only picks the operation, the script builds the rule
 /context-rewrite verify                                    # check every rule against the last real requests (main + subagents): hits, before/after, actual replacements
+/context-rewrite capture --raw                             # the request exactly as sent: every HTTP header + the whole JSON body, outlined; full copy saved under raw/
 /context-rewrite capture                                   # show the system prompt and injected content actually sent last time (before rewriting), and save it to a file
 /context-rewrite "find" "replace"                          # add a rule by hand, effective from the next request
 /context-rewrite "find" "replace" --scope                  # --scope with no value: pick where to replace from a menu

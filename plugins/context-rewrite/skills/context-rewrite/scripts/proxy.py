@@ -54,8 +54,25 @@ STATS = {}  # (session, "main" | agent_type) -> {"time", "hits": {rule#: {scope:
 
 def record_stats(headers, hits):
     sid = headers.get("x-claude-code-session-id") or "-"
-    who = headers.get("x-claude-code-agent-type") or ("subagent" if headers.get("x-claude-code-agent-id") else "main")
+    who = who_of(headers)
     STATS[(sid, who)] = {"time": time.strftime("%Y-%m-%d %H:%M:%S"), "hits": {str(k): v for k, v in hits.items()}}
+
+
+RAW = {}  # (session, "main" | agent_type) -> the last request exactly as received: headers (secrets masked) + body
+SECRET_HEADERS = ("authorization", "x-api-key", "cookie", "proxy-authorization")
+
+
+def who_of(headers):
+    return headers.get("x-claude-code-agent-type") or ("subagent" if headers.get("x-claude-code-agent-id") else "main")
+
+
+def record_raw(method, path, headers, body):
+    sid = headers.get("x-claude-code-session-id") or "-"
+    h = [[k, f"<hidden, {len(v)} chars>" if k.lower() in SECRET_HEADERS else v] for k, v in headers.items()]
+    RAW[(sid, who_of(headers))] = {"time": time.strftime("%Y-%m-%d %H:%M:%S"), "method": method, "path": path,
+                                   "headers": h, "body": body.decode("utf-8", "replace"), "sent": None}
+    RAW["__latest__"] = sid
+    return RAW[(sid, who_of(headers))]
 
 
 AGENTS = {}  # (session, agent_type) -> latest subagent snapshot; ("*", agent_type) -> latest across sessions
@@ -288,11 +305,20 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             return
-        if path in ("/__ctxrw/last", "/__ctxrw/corpus", "/__ctxrw/stats", "/__ctxrw/sources"):
+        if path in ("/__ctxrw/last", "/__ctxrw/corpus", "/__ctxrw/stats", "/__ctxrw/sources", "/__ctxrw/raw"):
             from urllib.parse import parse_qs
             q = {k: v[0] for k, v in parse_qs(query).items()}
             sid = q.get("session", "")
-            if path == "/__ctxrw/stats":
+            if path == "/__ctxrw/raw":
+                want = (q.get("agent") or "main").lower()
+                keys = [k for k in RAW if isinstance(k, tuple) and k[1].lower() == want]
+                key = next((k for k in keys if k[0] == sid), None) or (
+                    (RAW.get("__latest__"), "main") if want == "main" else (keys[-1] if keys else None))
+                rec = RAW.get(key) if key else None
+                body = json.dumps({"matched": bool(key) and key[0] == sid, "session": key[0] if key else None, "raw": rec,
+                                   "agents": sorted({k[1] for k in RAW if isinstance(k, tuple) and k[1] != "main"})},
+                                  ensure_ascii=False).encode()
+            elif path == "/__ctxrw/stats":
                 body = json.dumps({who: v for (s_, who), v in STATS.items() if s_ == sid} or
                                   {f"{who}@{s_}": v for (s_, who), v in STATS.items()}, ensure_ascii=False).encode()
             elif path == "/__ctxrw/sources":
@@ -321,6 +347,7 @@ class Handler(BaseHTTPRequestHandler):
         replaced = None
         original = data
         if data and self.command == "POST" and path.startswith("/v1/messages") and not path.endswith("count_tokens"):
+            raw = record_raw(self.command, self.path, self.headers, data)
             try:
                 d = json.loads(data)
                 snapshot(d, self.headers)
@@ -336,6 +363,7 @@ class Handler(BaseHTTPRequestHandler):
                     record_stats(self.headers, rw.hits)
                     if rw.count:
                         data = json.dumps(d, ensure_ascii=False).encode()
+                        raw["sent"] = data.decode("utf-8", "replace")
                         log(f"{path}: replaced {rw.count} ({', '.join(f'#{i}:{sum(v.values())}' for i, v in sorted(rw.hits.items()))})")
                 except Exception as e:
                     log(f"{path}: rewrite failed, forwarding as-is: {e}")
