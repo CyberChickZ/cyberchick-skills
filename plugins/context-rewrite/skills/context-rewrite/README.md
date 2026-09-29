@@ -84,6 +84,8 @@ Run `/context-rewrite doctor` first. It checks for and automatically fixes:
 What it can't fix, it explains: this session isn't `--yrb`, or the port is taken by another program. Recent upstream errors from the proxy log are listed too; if the failing requests had replacements, a rule probably broke them, so try `/context-rewrite off`, then `/context-rewrite toggle` rules one by one.
 
 ## Recovering from a broken state
+**No /reload-plugins after updates:** commands in an already-open session automatically run the newest installed scripts. Only new commands or changed hooks need one reload, and `doctor` tells you when.
+
 **Automatic snapshots:** before rules change (add, delete, toggle, scope) and before `install` modifies an rc file, a snapshot is saved automatically. The last 30 are kept in `~/.claude/context-rewrite/snapshots/`.
 
 ```

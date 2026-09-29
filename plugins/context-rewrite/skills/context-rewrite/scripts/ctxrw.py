@@ -1334,6 +1334,16 @@ def doctor():
     print(L("context-rewrite diagnostics\n", "context-rewrite 诊断\n"))
 
     print(L("[setup]", "[安装]"))
+    loaded, installed = loaded_root(), installed_root()
+    if loaded and installed and os.path.realpath(loaded) != os.path.realpath(installed):
+        lv, iv = os.path.basename(loaded.rstrip("/")), os.path.basename(installed.rstrip("/"))
+        if plugin_surface(loaded) == plugin_surface(installed):
+            ok(L(f"this session loaded {lv}, installed is {iv}: commands already run the {iv} scripts; no /reload-plugins needed",
+                 f"当前会话加载的是 {lv}，已安装 {iv}：命令已经自动改用 {iv} 的脚本，不需要 /reload-plugins"))
+        else:
+            fail(L(f"this session loaded {lv}, installed is {iv}; the scripts already follow {iv}, but its command menu or hooks changed",
+                   f"当前会话加载的是 {lv}，已安装 {iv}；脚本已经自动用 {iv}，但命令菜单或 hooks 有变化"),
+                 L("run /reload-plugins once so the new menu entries / hooks show up", "跑一次 /reload-plugins，新命令和 hooks 才会出现"))
     stale = stale_files()
     if stale:
         sync_files()
@@ -1782,5 +1792,52 @@ def main(argv):
         sys.exit(L(f"Unknown command: {cmd}\n{USAGE}", f"未知命令: {cmd}\n{USAGE}"))
 
 
+PLUGIN_KEY = "context-rewrite@cyberchick-skills"
+SCRIPT_REL = os.path.join("skills", "context-rewrite", "scripts", "ctxrw.py")
+
+
+def installed_root():
+    """installPath of the currently installed plugin version, per installed_plugins.json."""
+    try:
+        with open(os.path.join(PLUGINS_DIR, "installed_plugins.json")) as f:
+            entries = json.load(f)["plugins"].get(PLUGIN_KEY) or []
+        return next((e["installPath"] for e in entries if e.get("scope") == "user"), entries[0]["installPath"] if entries else None)
+    except Exception:
+        return None
+
+
+def loaded_root():
+    """Plugin root this session actually loaded (differs from installed_root() until /reload-plugins)."""
+    return os.environ.get("CTXRW_LOADED_ROOT") or os.environ.get("CLAUDE_PLUGIN_ROOT")
+
+
+def plugin_surface(root):
+    """What only /reload-plugins can refresh: the skill (menu) files and hooks.json. Scripts are followed automatically."""
+    out = {}
+    for base, _dirs, files in os.walk(root):
+        for f in files:
+            rel = os.path.relpath(os.path.join(base, f), root)
+            if f == "SKILL.md" or rel == os.path.join("hooks", "hooks.json"):
+                with open(os.path.join(base, f), encoding="utf-8") as fh:
+                    out[rel] = fh.read()
+    return out
+
+
+def follow_update():
+    """"Reload only this plugin": a session keeps running the plugin version it loaded until /reload-plugins, and old
+    versions stay in the plugin cache. So when this script runs from the cache and a newer version is installed,
+    hand over to that version's script right away (before stdin is read), and every command uses the latest code."""
+    here = os.path.realpath(__file__)
+    if os.environ.get("CTXRW_FOLLOWED") or os.path.realpath(os.path.join(PLUGINS_DIR, "cache")) + os.sep not in here:
+        return
+    root = installed_root()
+    target = root and os.path.join(root, SCRIPT_REL)
+    if target and os.path.isfile(target) and os.path.realpath(target) != here:
+        os.environ["CTXRW_FOLLOWED"] = "1"
+        os.environ.setdefault("CTXRW_LOADED_ROOT", os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(here)))))
+        os.execv(sys.executable, [sys.executable, target] + sys.argv[1:])
+
+
 if __name__ == "__main__":
+    follow_update()
     main(sys.argv[1:])

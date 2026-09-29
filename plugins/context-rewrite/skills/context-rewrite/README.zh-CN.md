@@ -83,6 +83,8 @@ claude --yrb              # 可以和其他参数叠加：claude --yrb --resume�
 修不了的会告诉你怎么处理：当前会话不是 `--yrb`、端口被别的程序占用。proxy 日志里最近的上游报错也会列出来；如果出错的请求里有替换，多半是某条规则把请求改坏了，先 `/context-rewrite off` 试试，再逐条 `/context-rewrite toggle` 排查。
 
 ## 坏了怎么恢复
+**插件更新后不用 /reload-plugins：** 旧会话里的命令会自动改用最新安装版本的脚本。只有新增命令或 hooks 变了才需要 reload 一次，`doctor` 会告诉你要不要。
+
 **自动快照：** 改规则（加、删、开关、改范围）和 `install` 修改 rc 之前，都会自动存一份快照，保留最近 30 份，放在 `~/.claude/context-rewrite/snapshots/`。
 
 ```
