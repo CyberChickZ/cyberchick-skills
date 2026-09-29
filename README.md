@@ -8,6 +8,14 @@ CyberChickZ 的 Claude Code 工具集。一个仓库（marketplace），每个�
 /plugin install <插件名>@cyberchick-skills
 ```
 
+### Codex
+`ai-job-search`、`council`、`xiaohongshu`、`cyberchick-hooks` 也能在 Codex 里用（Codex 读 `.agents/plugins/marketplace.json`）：
+```sh
+codex plugin marketplace add CyberChickZ/cyberchick-skills
+codex plugin add council@cyberchick-skills
+```
+`context-rewrite` 和 `checkpoint` 目前只支持 Claude Code。
+
 ## 插件
 | 插件 | 命令 | 作用 |
 |---|---|---|
