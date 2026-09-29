@@ -1,6 +1,6 @@
 ---
 name: council
-description: AI council blind review — anti-sycophancy peer review for research and engineering decisions. Use when (1) the user disputes or corrects a method or conclusion ("X is wrong, we should do Y"); (2) a methodology, experiment-design, or direction-level decision carries high cost (hours of GPU/compute, days of effort); (3) the user explicitly asks to convene the council ("convene the council", "blind review", "开议会", "盲审"), optionally specifying a model ("use opus max"). Multiple same-model agents with distinct personas review an anonymized brief in parallel clean contexts; a chairman adjudicates; the main agent relays one unified verdict. Do NOT trigger for light tasks (factual checks, pure execution, lookups).
+description: AI council blind review — anti-sycophancy peer review for research and engineering decisions. Use when (1) the user disputes or corrects a method or conclusion ("X is wrong, we should do Y"); (2) a methodology, experiment-design, or direction-level decision carries high cost (hours of GPU/compute, days of effort); (3) the user explicitly asks to convene the council ("convene the council", "blind review", "开议会", "盲审"), optionally specifying a model ("use opus max", "use the strongest GPT model"). Multiple same-model agents with distinct personas review an anonymized brief in parallel clean contexts; a chairman adjudicates; the main agent relays one unified verdict. Do NOT trigger for light tasks (factual checks, pure execution, lookups).
 ---
 
 # Council — Blind Peer Review
@@ -31,13 +31,13 @@ Example (monocular human-motion-reconstruction research):
 
 ## 2. Council members (spawned in parallel, clean contexts)
 
-Default 5 members; simple topics may use 3 (Refuter + Literature + Evidence). Each member's prompt = anonymized brief + persona instruction + shared discipline — **no conversation history**. Spawn via the Agent tool, all in one message so they run concurrently.
+Default 5 members; simple topics may use 3 (Refuter + Literature + Evidence). Each member's prompt = anonymized brief + persona instruction + shared discipline — **no conversation history**. Spawn them with the host's subagent mechanism (Claude Code: the Agent tool; Codex: subagents), all at once so they run concurrently. If the host has no subagents, run each member as a separate non-interactive call with a fresh context (e.g. `claude -p` / `codex exec`) — never inside the main conversation.
 
 | Persona | Core instruction |
 |---|---|
 | Refuter | Attack the weakest link in each candidate's evidence chain; try to falsify |
 | First-Principles | Ignore how the brief is phrased; re-derive from the problem itself |
-| Literature | Use WebSearch/WebFetch to check papers, official docs, GitHub issues; verify every claim against known results |
+| Literature | Use web search / fetch to check papers, official docs, GitHub issues; verify every claim against known results |
 | Evidence | Read the code, run minimal verifications; strictly separate "verified" from "guessed" |
 | Executor | Give the next minimal verification step and its cost |
 
@@ -52,7 +52,7 @@ Default 5 members; simple topics may use 3 (Refuter + Literature + Evidence). Ea
 - **Every disputed point goes to literature first**: before settling any disagreement "by experiment", search for published claims on it and cite them precisely (paper title + the specific finding — never "some paper said"). If the literature already answers the question, the citation settles it; design an experiment only when it does not.
 - **Only high-cost verification may leave the council** (GPU runs, user-only data or hardware). It returns as a precisely specified proposal — inputs, command, expected output, and the decision rule the result will settle — never as a vague "we should test X".
 
-**Automatic model rules** (when the user doesn't specify): implementation-level topics → members on a fast tier (e.g. `sonnet`); methodology/direction topics → members on a strong tier (e.g. `opus`); the chairman always uses the strongest available tier. Agent spawn has no effort parameter — enforce thinking depth through the prompt.
+**Automatic model rules** (when the user doesn't specify): implementation-level topics → members on a fast tier (e.g. Claude `sonnet`, or a fast GPT tier); methodology/direction topics → members on a strong tier (e.g. Claude `opus`, or the strongest GPT tier); the chairman always uses the strongest available tier. If the subagent mechanism can't set reasoning effort, enforce thinking depth through the prompt.
 
 ## 3. Chairman adjudication (clean context, separate spawn)
 
@@ -73,13 +73,13 @@ Input = all member opinions, still provenance-free. Output:
 ## 5. Environment alignment (two layers; both are full file-by-file Reads — grep is not reading)
 
 **Global layer** (once, on first use after install, or when the user says "align environment"):
-- The global `~/.claude/CLAUDE.md` + every file in the global memory directory
+- The host's global instructions: Claude Code → `~/.claude/CLAUDE.md` + every file in its global memory directory; Codex → `~/.codex/AGENTS.md`
 
 **Project layer** (on the **first** council use inside each project, or when the user says "align environment" there):
-- Every CLAUDE.md in the project and its subdirectories (`find <project> -name CLAUDE.md`, including nested ones such as `memory/CLAUDE.md`)
-- Reason: a session only loads the CLAUDE.md files on its cwd chain, so project-level conflicts can only be found and cleaned inside the project — one global pass cannot cover them
+- Every project instruction file in the project and its subdirectories: `CLAUDE.md` for Claude Code, `AGENTS.md` for Codex (`find <project> -name CLAUDE.md -o -name AGENTS.md`, including nested ones such as `memory/CLAUDE.md`)
+- Reason: a session only loads the instruction files on its cwd chain, so project-level conflicts can only be found and cleaned inside the project — one global pass cannot cover them
 
 **Shared procedure**:
 - Identify entries that duplicate, contradict, or are obsoleted by this skill (semantic conflicts, not just verbatim duplicates)
 - Output a conflict list + proposed diff → apply cleanup only after the user approves
-- Principles: CLAUDE.md keeps only the shortest behavioral red lines while mechanics belong to this skill; delete duplicates; if conflicts are few, report that honestly — never delete things to look busy
+- Principles: CLAUDE.md / AGENTS.md keeps only the shortest behavioral red lines while mechanics belong to this skill; delete duplicates; if conflicts are few, report that honestly — never delete things to look busy

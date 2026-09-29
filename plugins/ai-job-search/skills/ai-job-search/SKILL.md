@@ -1,6 +1,6 @@
 ---
 name: ai-job-search
-description: 全自动求职流水线——每天从 80+ 家公司的 ATS 接口拉新岗并预筛 JD、按方向选简历、派 sonnet 子代理填表投递、清邮箱更新状态、刷新进度看板。用户说“投简历 / 找岗 / 继续申请 / jobright / 看看邮件 / 更新进度”时用。
+description: 全自动求职流水线——每天从 80+ 家公司的 ATS 接口拉新岗并预筛 JD、按方向选简历、派子代理填表投递、清邮箱更新状态、刷新进度看板。用户说“投简历 / 找岗 / 继续申请 / jobright / 看看邮件 / 更新进度”时用。
 ---
 
 # ai-job-search
@@ -8,8 +8,8 @@ description: 全自动求职流水线——每天从 80+ 家公司的 ATS 接口
 个人资料和设定都在**本机数据目录**，不在这个插件里：
 
 ```
-DATA = ~/.claude/cyberchick-skills/ai-job-search/   （设置了 CLAUDE_CONFIG_DIR 就在它下面；AI_JOB_SEARCH_DATA 可覆盖）
-SCRIPTS = ${CLAUDE_PLUGIN_ROOT}/skills/ai-job-search/scripts
+DATA = ~/.claude/cyberchick-skills/ai-job-search/   （Claude Code 和 Codex 都用这个位置；设置了 CLAUDE_CONFIG_DIR 就在它下面；AI_JOB_SEARCH_DATA 可覆盖）
+SCRIPTS = 本 SKILL.md 所在目录下的 scripts/（Claude Code 里就是 ${CLAUDE_PLUGIN_ROOT}/skills/ai-job-search/scripts）
 ```
 
 第一次用：`DATA/profile.md` 不存在 → 跑 `python3 SCRIPTS/init_data.py` 生成模板，让用户填好 `profile.md`、`local.md`、`config.json` 再继续。
@@ -32,19 +32,19 @@ SCRIPTS = ${CLAUDE_PLUGIN_ROOT}/skills/ai-job-search/scripts
 
 数据：
 - **`<jobdir>/applications.csv` = 唯一事实来源**。列：`id,applied_date,company,role,location,track,ats,link,status,resume,notes,last_update`；status ∈ submitted / rejected / interview / offer / skipped / blocked / queued / withdrawn；track ∈ SDE / FDE / Robotics / MLE / Research / Other。
-- 看板：`render_site.py` 生成 `<jobdir>/site/index.html`，用 Artifact 工具 publish；链接见 `DATA/local.md`，带 `url` 参数更新同一个链接。
+- 看板：`render_site.py` 生成 `<jobdir>/site/index.html`。Claude Code 里用 Artifact 工具 publish（链接见 `DATA/local.md`，带 `url` 参数更新同一个链接）；没有 Artifact 的宿主（如 Codex）直接给出这个本地 HTML 的路径。
 
 ## 每日流程
 
-1. **邮箱**（Gmail MCP，`search_threads(query="in:inbox newer_than:2d")`）
+1. **邮箱**（用 Gmail 连接器 / MCP 搜 `in:inbox newer_than:2d`；Claude Code 里是 Gmail MCP 的 `search_threads`）
    - 拒信 / 面试 / OA / take-home → 改 CSV 对应行的 status + last_update + notes，**在回复里高亮**，需要用户本人行动的放最前
-   - 投递确认 → 归档（`unlabel_thread` 去掉 INBOX、UNREAD），只报数量
-   - 营销 → `trash_thread`
+   - 投递确认 → 归档（去掉 INBOX、UNREAD 标签），只报数量
+   - 营销 → 移到垃圾箱
    - 银行 / 学校 / 签证 / 个人 → 不动，提一句
-2. **找岗**：`python3 SCRIPTS/source_jobs.py --days 3`（首次或隔久了用 `--days 14`）。输出三档：✅ 可直投 / ⚠️ 写了 3+ 年要看 JD / ⛔ 已排除。再补 **JobRight**（两边互补，实测重合很少）：在已登录的 `jobright.ai/jobs/recommend` 页面里用 javascript_tool 调它的内部接口 `fetch('/swan/recommend/list/jobs?refresh=false&sortCondition=0&position=<0,20,40…>&count=20&syncRerank=false')` 翻页拿全量（页面是虚拟列表，别滚动抓 DOM）。每条的 `jobResult` 有 jobTitle / jobSeniority / employmentType / isCitizenOnly / isClearanceRequired / originalUrl；`companyResult.companyName`。只留 jobSeniority 含 Intern/New Grad/Entry 的（它 60% 是 Mid Level）。**它的 publishTime 是重新抓取时间，不是真实发布日期；H1B 标记是公司级估计，全都是 true，没区分度。** originalUrl 里出现新的 greenhouse/ashby/lever slug → `--probe` 验证后加进 `DATA/watchlist.json`。JobRight 付费 autofill 不用。结果输出不能太长（javascript_tool 返回约 1KB 就截断）→ 在页面里算好再分批取。
+2. **找岗**：`python3 SCRIPTS/source_jobs.py --days 3`（首次或隔久了用 `--days 14`）。输出三档：✅ 可直投 / ⚠️ 写了 3+ 年要看 JD / ⛔ 已排除。再补 **JobRight**（两边互补，实测重合很少）：在已登录的 `jobright.ai/jobs/recommend` 页面里用浏览器自动化工具执行 JS（Claude Code 里是 Chrome 扩展的 javascript_tool）调它的内部接口 `fetch('/swan/recommend/list/jobs?refresh=false&sortCondition=0&position=<0,20,40…>&count=20&syncRerank=false')` 翻页拿全量（页面是虚拟列表，别滚动抓 DOM）。每条的 `jobResult` 有 jobTitle / jobSeniority / employmentType / isCitizenOnly / isClearanceRequired / originalUrl；`companyResult.companyName`。只留 jobSeniority 含 Intern/New Grad/Entry 的（它 60% 是 Mid Level）。**它的 publishTime 是重新抓取时间，不是真实发布日期；H1B 标记是公司级估计，全都是 true，没区分度。** originalUrl 里出现新的 greenhouse/ashby/lever slug → `--probe` 验证后加进 `DATA/watchlist.json`。JobRight 付费 autofill 不用。结果输出不能太长（Claude Code 的 javascript_tool 返回约 1KB 就截断）→ 在页面里算好再分批取。
    用户丢过来的链接照常处理。
 3. **选一批 4–5 个**：按 `DATA/local.md` 的方向优先级；查 `DATA/quotas.md`；稀缺名额只列给用户选。
-4. **派填表子代理**（`model: "sonnet"`，一次只一个，浏览器串行）——用下面的模板，**引用文件，不要把规则抄进 prompt**。
+4. **派填表子代理**（用较快的模型：Claude Code 里 `model: "sonnet"`，Codex 里用快速档；一次只一个，浏览器串行）——用下面的模板，**引用文件，不要把规则抄进 prompt**。
 5. 子代理回来 → 核对它写进 CSV 的行 → `render_site.py` → 重新 publish 看板。
 6. **汇报**：表格（公司/岗位/状态/卡点）+「要你做的」+ 看板链接。
 
@@ -55,7 +55,7 @@ SCRIPTS = ${CLAUDE_PLUGIN_ROOT}/skills/ai-job-search/scripts
 - DATA/ats_playbook.md（按 ATS 找对应小节）
 （DATA 换成实际路径）
 队列：<4–5 行：公司 | 岗位 | 链接 | 用哪版简历>
-规则：先读 JD，写明不给 sponsorship / 要公民或 clearance / 要 PhD → 跳过记原因。单岗卡 3 次就标 blocked 换下一个。只有看到确认页才算 submitted。每投完一个立刻追加/更新 <jobdir>/applications.csv（csv 模块写，别手拼逗号）。遇到硬停项 → tabs_create_mcp 开独立 tab 停在那步不关，汇报里写 tab 标题。
+规则：先读 JD，写明不给 sponsorship / 要公民或 clearance / 要 PhD → 跳过记原因。单岗卡 3 次就标 blocked 换下一个。只有看到确认页才算 submitted。每投完一个立刻追加/更新 <jobdir>/applications.csv（csv 模块写，别手拼逗号）。遇到硬停项 → 开一个独立浏览器 tab 停在那步不关，汇报里写 tab 标题。
 学到新坑 → 修好后把解法追加进 DATA/ats_playbook.md 对应小节（带日期+公司）。
 汇报：每岗一行 公司 | 岗位 | 状态 | 原因。
 ```
@@ -75,7 +75,7 @@ SCRIPTS = ${CLAUDE_PLUGIN_ROOT}/skills/ai-job-search/scripts
 - **确认页才算投了**。404 不等于失败（去候选人 dashboard 核实）。
 - **外发邮件**：先给用户一行大纲（给谁 / 说啥 / 要啥）→ 他点头 → 再发正式版。
 - **需要用户本人操作的页面**（SSO 账号选择、Apple ID、验证码、短信）：开独立 tab 停住，不在同一 tab 继续跳走。
-- **子代理用 sonnet**；浏览器同一时刻只有一个代理。
+- **子代理用较快的模型**（Claude: sonnet）；浏览器同一时刻只有一个代理。
 - 一批 4–5 个。批次太大子代理会在“评估规模”上耗光预算、一个都不投。
 
 ## 自我维护

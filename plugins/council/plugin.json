@@ -1,9 +1,11 @@
 {
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "council",
   "version": "1.1.0",
   "description": "研究决策的 AI 盲审，防附和。",
   "author": {
     "name": "CyberChickZ",
     "url": "https://github.com/CyberChickZ"
-  }
+  },
+  "repository": "https://github.com/CyberChickZ/cyberchick-skills"
 }

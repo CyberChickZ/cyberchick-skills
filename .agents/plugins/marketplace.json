@@ -1,0 +1,44 @@
+{
+  "name": "cyberchick-skills",
+  "interface": {
+    "displayName": "CyberChick Skills"
+  },
+  "plugins": [
+    {
+      "name": "council",
+      "source": {
+        "source": "local",
+        "path": "./plugins/council"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    },
+    {
+      "name": "xiaohongshu",
+      "source": {
+        "source": "local",
+        "path": "./plugins/xiaohongshu"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    },
+    {
+      "name": "cyberchick-hooks",
+      "source": {
+        "source": "local",
+        "path": "./plugins/cyberchick-hooks"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}

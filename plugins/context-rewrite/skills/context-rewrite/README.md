@@ -52,6 +52,11 @@ Every subcommand is also its own command, so typing `/context-rewrite:` lists th
 `/context-rewrite:install`, `:auto`, `:autowoc`, `:add`, `:capture`, `:list`, `:rm`, `:toggle`, `:scope`, `:on`, `:off`, `:status`, `:doctor`, `:restore`, `:snapshots`, `:snapshot`, `:uninstall`.
 `/context-rewrite:capture` is the same as `/context-rewrite capture`. Short names such as `/capture` work too, except `status`, `doctor` and `help`, which Claude Code already uses — type the full name for those.
 
+### Subagents
+Subagents run inside the same claude process, so their requests go through the proxy and every rule applies to them too.
+- `/context-rewrite:capture @general-purpose` shows a subagent's last request (type `@` and pick the subagent; `@agent-<name>` works too). User-defined subagents are reported as type `custom`. Plain `capture` lists the subagent types recorded so far.
+- `auto` checks against the main session **and** the latest request of every subagent type, so text that only exists in a subagent's prompt can be matched.
+
 ### auto: describe the change, paste the text in `{braces}`
 ```
 /context-rewrite auto delete from {- Entering financial credentials, bank/card/…} to {- Downloading or executing files from untrusted sources}

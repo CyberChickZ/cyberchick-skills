@@ -592,6 +592,43 @@ def script_proxy_version():
         return None
 
 
+def proxy_get(path, **params):
+    import urllib.parse
+    import urllib.request
+    if not running():
+        return None
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{PORT}{path}?" + urllib.parse.urlencode(params), timeout=5) as r:
+            return json.load(r)
+    except Exception:
+        return None
+
+
+def fetch_corpus():
+    """Text to check rules against: this session's last main request + the latest request of every subagent type
+    (subagent prompts are fixed). Returns (corpus, sources, matched) or (None, [], False)."""
+    sid = os.environ.get("CTXRW_SESSION_ID", "")
+    res = proxy_get("/__ctxrw/corpus", session=sid)
+    if res and res.get("corpus"):
+        return res["corpus"], res.get("sources", []), res.get("matched", False)
+    old = fetch_snapshot()  # older proxy without /__ctxrw/corpus
+    if old:
+        return snapshot_corpus(old["snapshot"]), ["main"], old.get("matched", False)
+    return None, [], False
+
+
+def sources_label(sources):
+    names = [L("main session", "主会话") if x == "main" else L(f"subagent {x}", f"子代理 {x}") for x in sources]
+    return L(", ", "、").join(names)
+
+
+def parse_agent(args):
+    """@"general-purpose (agent)" (what the @ picker inserts), @agent-name, @plugin:name or @name → agent name."""
+    raw = " ".join(args).strip()
+    m = re.match(r'^@"?(?:agent-)?([^"()]+?)(?:\s*\(agent\))?"?$', raw)
+    return m.group(1).strip() if m else None
+
+
 def fetch_snapshot():
     import urllib.request
     if not running():
@@ -624,23 +661,40 @@ def snapshot_text(res, bar="─" * 60, english=False):
     return "\n".join(out)
 
 
-def capture():
+def capture(args=()):
     if os.environ.get("CLAUDECODE") and not yrb_session():
         sys.exit(L("capture only works in a session started with claude --yrb (normal sessions don't go through the proxy)",
                    "capture 只能在用 claude --yrb 启动的会话里用（普通会话不经过 proxy）"))
     if not running():
         sys.exit(L("the proxy is not running", "proxy 没在运行"))
-    res = fetch_snapshot()
+    agent = parse_agent(args) if args else None
+    if args and not agent:
+        sys.exit(L("Usage: /context-rewrite:capture [@subagent]  (type @ and pick the subagent)", "用法：/context-rewrite:capture [@子代理]（输入 @ 选子代理）"))
+    sid = os.environ.get("CTXRW_SESSION_ID", "")
+    if agent:
+        res = proxy_get("/__ctxrw/last", session=sid, agent=agent)
+        if res is not None and not res.get("snapshot") and ":" not in agent and agent.lower() not in ("general-purpose", "explore", "plan"):
+            res = proxy_get("/__ctxrw/last", session=sid, agent="custom")  # user-defined agents report type "custom"
+        if not res or not res.get("snapshot"):
+            seen = ", ".join((res or {}).get("agents") or []) or L("none yet", "还没有")
+            sys.exit(L(f"No request from subagent {agent} has gone through the proxy yet. Recorded subagent types: {seen}",
+                       f"还没有子代理 {agent} 的请求经过 proxy。已记录的子代理类型：{seen}"))
+    else:
+        res = fetch_snapshot()
     if not res:
         sys.exit(L("This session hasn't sent a request yet; send any message first, then run capture",
                    "这个会话还没有发过请求，先随便发一句话，再执行 capture"))
     snap = res["snapshot"]
-    out = [L(f"Original text of the last request ({snap['time']}, model={snap['model']}), before rewriting:",
-             f"上一次请求（{snap['time']}，model={snap['model']}）的原文，替换之前："), ""]
-    if not res["matched"]:
+    who = L(f"subagent {snap.get('agent_type')}", f"子代理 {snap.get('agent_type')}") if agent else L("main session", "主会话")
+    out = [L(f"Original text of the last request from the {who} ({snap['time']}, model={snap['model']}), before rewriting:",
+             f"{who} 上一次请求（{snap['time']}，model={snap['model']}）的原文，替换之前："), ""]
+    if not agent and not res["matched"]:
         out[1:1] = [L("⚠ No record for this session; showing the most recent --yrb session's request instead",
                       "⚠ 没找到当前会话的记录，下面显示的是最近一个 --yrb 会话的请求")]
     out.append(snapshot_text(res))
+    others = [k for k in (res.get("agents") or []) if not agent or k.lower() != (snap.get("agent_type") or "").lower()]
+    if others:
+        out += ["", L("Subagents recorded so far (view one with /context-rewrite:capture @<name>): ", "已记录的子代理（用 /context-rewrite:capture @名字 查看）：") + ", ".join(others)]
     text = "\n".join(out)
     path = os.path.join(HOME, "captured.txt")
     with open(path, "w") as f:
@@ -951,7 +1005,7 @@ def auto_rule(desc):
     except ValueError:
         sys.exit(L("One of the {…} snippets is empty.", "有一个 {…} 是空的。"))
 
-    if check and not fetch_snapshot():
+    if check and not fetch_corpus()[0]:
         sys.exit(L("✗ checking needs a record of the last request: start claude with --yrb and send a message first, or use autowoc (auto --no-check) to add the rule without checking",
                    "✗ 核对需要上一次请求的记录：先用 --yrb 启动 claude 并发一句话；或者用 autowoc（auto --no-check）不核对直接加"))
     print(L(f"Instruction sent to the model: {template}", f"交给模型的指令：{template}"))
@@ -971,29 +1025,25 @@ def auto_rule(desc):
     used = {int(x) for x in ph.findall(pattern_t) if int(x) < len(literals)}
     if not used:
         sys.exit(L(f"✗ the model's pattern uses no placeholder: {pattern_t!r}", f"✗ 模型给的正则没用到任何占位符: {pattern_t!r}"))
-    res = fetch_snapshot() if check else None
-    corpus = None
-    if check and not res:
+    corpus, sources, matched = fetch_corpus() if check else (None, [], False)
+    if check and not corpus:
         sys.exit(L("✗ checking needs a record of the last request: start claude with --yrb and send a message first, or use autowoc (auto --no-check) to add the rule without checking",
                    "✗ 核对需要上一次请求的记录：先用 --yrb 启动 claude 并发一句话；或者用 autowoc（auto --no-check）不核对直接加"))
-    if res:
-        snap = res["snapshot"]
-        corpus = snapshot_corpus(snap)
+    if corpus:
         missing = [i for i in sorted(used) if not any(re.search(lit_rx[i], v) for v in corpus.values())]
         if missing:
             print(L("✗ these snippets are not in the last request (check the copied text; /context-rewrite capture shows the original):",
                     "✗ 这些原文在上一次请求里找不到（检查复制的文字；/context-rewrite capture 可以看原文）："))
             for i in missing:
                 print(f"    {{{i}}} {literals[i][:80]!r}")
-            searched = ", ".join(k for k, v in corpus.items() if v)
-            print(L(f"  searched the whole last request ({searched}) of session {res.get('session') or '?'}",
-                    f"  已在会话 {res.get('session') or '?'} 的上一次完整请求里查过（{searched}）"))
-            if not res.get("matched"):
-                print(L("  ⚠ that is NOT this session: this session has no recorded request (not started with --yrb, or no message sent yet)",
-                        "  ⚠ 这不是当前会话：当前会话没有请求记录（不是用 --yrb 启动的，或者还没发过消息）"))
-            if not snap.get("corpus"):
-                print(L("  ⚠ the running proxy is an old version that only records part of the request; run /context-rewrite doctor to restart it, send one message, then retry",
-                        "  ⚠ 正在运行的 proxy 是旧版，只记录了请求的一部分；先跑 /context-rewrite doctor 重启它，随便发一句话，再重试"))
+            print(L(f"  searched the last full request of: {sources_label(sources)}",
+                    f"  已查过这些的上一次完整请求：{sources_label(sources)}"))
+            if not matched:
+                print(L("  ⚠ this session has no recorded request (not started with --yrb, or no message sent yet); the main-session text is from another --yrb session",
+                        "  ⚠ 当前会话没有请求记录（不是用 --yrb 启动的，或者还没发过消息）；主会话部分用的是别的 --yrb 会话"))
+            if proxy_version() != script_proxy_version():
+                print(L("  ⚠ the running proxy is an old version; run /context-rewrite:doctor to restart it, send one message, then retry",
+                        "  ⚠ 正在运行的 proxy 是旧版；先跑 /context-rewrite:doctor 重启它，随便发一句话，再重试"))
             return
 
     named = set()
@@ -1069,11 +1119,7 @@ def auto_rule(desc):
 
 
 def add_rules(new, cfg):
-    res = fetch_snapshot()
-    corpus = None
-    if res:
-        snap = res["snapshot"]
-        corpus = snapshot_corpus(snap)
+    corpus, _sources, _matched = fetch_corpus()
     for r in new:
         if not isinstance(r, dict) or not isinstance(r.get("find"), str) or not r["find"]:
             sys.exit(L(f"invalid rule: {r!r}", f"规则格式不对: {r!r}"))
@@ -1413,7 +1459,7 @@ def main(argv):
     elif cmd == "list":
         show(cfg)
     elif cmd == "capture":
-        capture()
+        capture(args)
     elif cmd == "add-json":
         try:
             new = json.loads(" ".join(args) if args else sys.stdin.read())

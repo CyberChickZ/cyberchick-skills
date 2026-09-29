@@ -48,11 +48,10 @@ def texts(c):
 LAST = {}
 
 
-def snapshot(d, headers):
-    """Keep the latest original (pre-rewrite) request of each session's main agent in memory, for capture."""
-    if headers.get("x-claude-code-agent-id"):
-        return
-    sid = headers.get("x-claude-code-session-id") or "-"
+AGENTS = {}  # (session, agent_type) -> latest subagent snapshot; ("*", agent_type) -> latest across sessions
+
+
+def build_snapshot(d, headers):
     msgs = [m for m in d.get("messages", []) if isinstance(m, dict)]
     users = [m for m in msgs if m.get("role") == "user"]
     picks = []
@@ -65,13 +64,55 @@ def snapshot(d, headers):
         by_role.setdefault(m.get("role", "user"), []).extend(texts(m.get("content")))
     tools = [t["description"] for t in d.get("tools", []) or [] if isinstance(t, dict) and isinstance(t.get("description"), str)]
     system = texts(d.get("system", []))
-    LAST[sid] = {"time": time.strftime("%Y-%m-%d %H:%M:%S"), "model": d.get("model"),
-                 "system": system,
-                 "messages": [(label, texts(m.get("content"))) for label, m in picks],
-                 # the whole request as searchable text, per rewrite scope
-                 "corpus": {"system": "\n".join(system), "user": "\n".join(by_role["user"]),
-                            "assistant": "\n".join(by_role["assistant"]), "tools": "\n".join(tools)}}
+    return {"time": time.strftime("%Y-%m-%d %H:%M:%S"), "model": d.get("model"),
+            "agent_type": headers.get("x-claude-code-agent-type") or "main",
+            "system": system,
+            "messages": [(label, texts(m.get("content"))) for label, m in picks],
+            # the whole request as searchable text, per rewrite scope
+            "corpus": {"system": "\n".join(system), "user": "\n".join(by_role["user"]),
+                       "assistant": "\n".join(by_role["assistant"]), "tools": "\n".join(tools)}}
+
+
+def snapshot(d, headers):
+    """Keep the latest original (pre-rewrite) request of each session's main agent, and of each subagent type,
+    in memory for capture and rule checking."""
+    cls = headers.get("x-claude-code-request-class")
+    if cls == "compaction" or headers.get("x-claude-code-compaction"):
+        return
+    sid = headers.get("x-claude-code-session-id") or "-"
+    snap = build_snapshot(d, headers)
+    if headers.get("x-claude-code-agent-id") or cls in ("subagent", "workflow"):
+        kind = headers.get("x-claude-code-agent-type") or cls or "subagent"
+        AGENTS[(sid, kind)] = snap
+        AGENTS[("*", kind)] = dict(snap, session=sid)
+        return
+    LAST[sid] = snap
     LAST["__latest__"] = sid
+
+
+def agent_snapshot(sid, kind):
+    """Latest snapshot of a subagent type: this session first, then any session (subagent prompts are fixed)."""
+    kinds = {k for _, k in AGENTS}
+    match = next((k for k in kinds if k.lower() == kind.lower()), None)
+    if not match:
+        return None, sorted(kinds)
+    snap = AGENTS.get((sid, match)) or AGENTS.get(("*", match))
+    return snap, sorted(kinds)
+
+
+def merged_corpus(sid):
+    """Main request of this session + the latest request of every subagent type, per scope."""
+    parts, sources = {}, []
+    main = LAST.get(sid) or LAST.get(LAST.get("__latest__"))
+    snaps = ([("main", main)] if main else []) + [(k, AGENTS.get((sid, k)) or AGENTS.get(("*", k)))
+                                                   for k in sorted({k for s, k in AGENTS if s != "*"} | {k for s, k in AGENTS if s == "*"})]
+    for name, snap in snaps:
+        if not snap:
+            continue
+        sources.append(name)
+        for scope, text in snap["corpus"].items():
+            parts.setdefault(scope, []).append(text)
+    return {k: "\n".join(v) for k, v in parts.items()}, sources
 
 
 def yrb_processes():
@@ -226,11 +267,22 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             return
-        if path == "/__ctxrw/last":
-            sid = dict(kv.partition("=")[::2] for kv in query.split("&") if kv).get("session", "")
-            matched = sid in LAST
-            key = sid if matched else LAST.get("__latest__")
-            body = json.dumps({"matched": matched, "session": key, "snapshot": LAST.get(key)}, ensure_ascii=False).encode()
+        if path in ("/__ctxrw/last", "/__ctxrw/corpus"):
+            from urllib.parse import parse_qs
+            q = {k: v[0] for k, v in parse_qs(query).items()}
+            sid = q.get("session", "")
+            if path == "/__ctxrw/corpus":
+                corpus, sources = merged_corpus(sid)
+                body = json.dumps({"corpus": corpus, "sources": sources, "matched": sid in LAST}, ensure_ascii=False).encode()
+            elif q.get("agent"):
+                snap, kinds = agent_snapshot(sid, q["agent"])
+                body = json.dumps({"matched": bool(snap), "session": (snap or {}).get("session", sid), "snapshot": snap,
+                                   "agents": kinds}, ensure_ascii=False).encode()
+            else:
+                matched = sid in LAST
+                key = sid if matched else LAST.get("__latest__")
+                body = json.dumps({"matched": matched, "session": key, "snapshot": LAST.get(key),
+                                   "agents": sorted({k for _, k in AGENTS})}, ensure_ascii=False).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))

@@ -1,5 +1,7 @@
 # ATS 填表手册（browser playbook）
 
+> 工具名按 Claude Code 的浏览器扩展（Claude in Chrome）写，例如 `read_page`、`form_input`、`javascript_tool`。在 Codex 等其他宿主上，换成对应的浏览器自动化工具，填表思路不变。
+
 填表子代理**开工前必读**。每条都是真实踩坑换来的；遇到新坑 → 修好后把解法追加到对应 ATS 小节（写日期 + 公司），别只留在对话里。
 
 ## 09 月新增（2026-09-20 ~ 09-25）

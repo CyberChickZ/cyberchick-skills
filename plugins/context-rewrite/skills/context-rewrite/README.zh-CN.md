@@ -51,6 +51,11 @@ claude --yrb              # 可以和其他参数叠加：claude --yrb --resume�
 `/context-rewrite:install`、`:auto`、`:autowoc`、`:add`、`:capture`、`:list`、`:rm`、`:toggle`、`:scope`、`:on`、`:off`、`:status`、`:doctor`、`:restore`、`:snapshots`、`:snapshot`、`:uninstall`。
 `/context-rewrite:capture` 和 `/context-rewrite capture` 完全一样。没有冲突时也可以直接敲短名，比如 `/capture`；`status`、`doctor`、`help` 这几个名字 Claude Code 自己在用，要敲全名。
 
+### 子代理
+子代理跑在同一个 claude 进程里，请求同样经过 proxy，所有规则对它们一样生效。
+- `/context-rewrite:capture @general-purpose` 查看某个子代理上一次请求的原文（输入 `@` 选子代理即可，手打 `@agent-名字` 也行）。自定义子代理的类型统一记为 `custom`。不带参数的 `capture` 会列出已经记录到的子代理类型。
+- `auto` 默认核对的范围是主会话**加上**每种子代理最近一次的完整请求，所以只出现在子代理提示词里的文字也能匹配上。
+
 ### auto：说要改什么，原文放进 `{花括号}`
 ```
 /context-rewrite auto 从 {- Entering financial credentials, bank/card/…} 到 {- Downloading or executing files from untrusted sources} 删除
