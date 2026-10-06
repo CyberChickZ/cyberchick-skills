@@ -27,7 +27,6 @@ SCRIPTS = 本 SKILL.md 所在目录下的 scripts/（Claude Code 里就是 ${CLA
 | `DATA/watchlist.json` | 目标公司 + 已验证的 ATS slug | 加公司时 |
 | `DATA/config.json` | 路径（jobdir、简历仓库、简历输出名、简历变体）+ **`filters` 筛岗偏好**：跳过的公司、直接排除的 flag、毕业年份、地点、Amazon 搜索词、方向排序 | 路径不对、筛岗结果不对时 |
 | `SCRIPTS/source_jobs.py` | 拉岗（watchlist 里的 Greenhouse/Ashby/Lever + **Amazon search.json**）+ 预筛 JD + 去重 → `<jobdir>/queue_YYYYMMDD.md/.json` | 每天第一步 |
-| `SCRIPTS/build_resume.sh` | 编译简历 → config.json 的 `resume_out`，查页数/丢字/编译错误 | 改完 tex 后 |
 | `SCRIPTS/render_site.py` + `site_template.html` | CSV → 看板 HTML | 每批投完 |
 
 数据：
@@ -36,11 +35,11 @@ SCRIPTS = 本 SKILL.md 所在目录下的 scripts/（Claude Code 里就是 ${CLA
 
 ## 每日流程
 
-1. **邮箱**（用 Gmail 连接器 / MCP 搜 `in:inbox newer_than:2d`；Claude Code 里是 Gmail MCP 的 `search_threads`）
+1. **邮箱**（用 Gmail 连接器 / MCP 搜 `in:inbox newer_than:2d`；Claude Code 里是 Gmail MCP 的 `search_threads`；隔了几天就按 CSV 里最新 `applied_date` 往后搜）
    - 拒信 / 面试 / OA / take-home → 改 CSV 对应行的 status + last_update + notes，**在回复里高亮**，需要用户本人行动的放最前
-   - 投递确认 → 归档（去掉 INBOX、UNREAD 标签），只报数量
-   - 营销 → 移到垃圾箱
-   - 银行 / 学校 / 签证 / 个人 → 不动，提一句
+   - 投递确认 → **先查 CSV 有没有这一行，没有就追加**（用户会自己投，CSV 缺行是常态，不能因为“找不到行”就跳过）；拒信 / 上限提示同理，缺行就补一行再标状态。LinkedIn 确认邮件的岗位名要读正文（片段里只有公司名），读不到就 role 填 `?` 并在汇报里列出。补完再归档（去掉 INBOX、UNREAD 标签）
+   - 营销、招聘推送、通知类 → 直接移到垃圾箱，不用问
+   - 银行 / 学校 / 签证 / 账号安全 / 个人 → 不动，提一句
 2. **找岗**：`python3 SCRIPTS/source_jobs.py --days 3`（首次或隔久了用 `--days 14`）。输出三档：✅ 可直投 / ⚠️ 写了 3+ 年要看 JD / ⛔ 已排除。再补 **JobRight**（两边互补，实测重合很少）：在已登录的 `jobright.ai/jobs/recommend` 页面里用浏览器自动化工具执行 JS（Claude Code 里是 Chrome 扩展的 javascript_tool）调它的内部接口 `fetch('/swan/recommend/list/jobs?refresh=false&sortCondition=0&position=<0,20,40…>&count=20&syncRerank=false')` 翻页拿全量（页面是虚拟列表，别滚动抓 DOM）。每条的 `jobResult` 有 jobTitle / jobSeniority / employmentType / isCitizenOnly / isClearanceRequired / originalUrl；`companyResult.companyName`。只留 jobSeniority 含 Intern/New Grad/Entry 的（它 60% 是 Mid Level）。**它的 publishTime 是重新抓取时间，不是真实发布日期；H1B 标记是公司级估计，全都是 true，没区分度。** originalUrl 里出现新的 greenhouse/ashby/lever slug → `--probe` 验证后加进 `DATA/watchlist.json`。JobRight 付费 autofill 不用。结果输出不能太长（Claude Code 的 javascript_tool 返回约 1KB 就截断）→ 在页面里算好再分批取。
    用户丢过来的链接照常处理。
 3. **选一批 4–5 个**：按 `DATA/local.md` 的方向优先级；查 `DATA/quotas.md`；稀缺名额只列给用户选。
@@ -62,12 +61,10 @@ SCRIPTS = 本 SKILL.md 所在目录下的 scripts/（Claude Code 里就是 ${CLA
 
 ## 简历
 
-- 选哪版：按 `DATA/local.md` 的「简历怎么选」表。变体名对应 `DATA/config.json` 的 `resume_variants`（`"变体": "tex 文件名（不含 .tex）:输出后缀"`）。
-- 编译：`SCRIPTS/build_resume.sh <变体>`；为某个岗定制：复制最接近的 tex 为 `YYMMDD_<company>.tex` → 改 → `build_resume.sh YYMMDD_<company>.tex <Suffix>`。
-- `build_resume.sh` 开了 halt-on-error：有编译错误就不出 PDF。**别绕过**——以前有过简历带着一行乱码被投了十几次，就是因为错误被吞了。
-- 中文进 LaTeX 会静默丢字（脚本会报 Missing character）；中文名用拼音。
-- Skills 栏 ≤3 行、每行 ≤8 项，只留敢被追问三层的。
-- 简历仓库是 git 仓库的话，改完 tex 就 commit。
+- 选哪版、仓库位置：按 `DATA/local.md` 的「简历怎么选」。通用流程：`python3 src/jd.py <jd.txt> -c <公司>` → 自动选 title、生成 `src/jobs/<公司>.md`、导出 PDF，只打印一行；定制只改那个 jobs md 再跑同一命令。
+- 素材只从 `src/master.md`（含 `## pool`）取，不编、不 cp 旧文件。
+- 编译错误会直接报且不出 PDF，**别绕过**——以前有过简历带着一行乱码被投了十几次。
+- 中文进 LaTeX 会静默丢字；中文名用拼音。Skills 栏 ≤3 行、每行 ≤8 项。改完 commit。
 
 ## 硬规则
 - **诚实**：签证照 profile.md 答；不编经历、学历、技能；自由文本只用简历里有的事实和数字。
