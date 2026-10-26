@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """applications.csv + 最新 queue_*.json → <jobdir>/site/index.html（再用 Artifact 工具发布）"""
-import csv, datetime as dt, json
+import csv, datetime as dt, json, re
 from pathlib import Path
 from _config import SKILL, path
 J = path("jobdir")
 apps = list(csv.DictReader((J / "applications.csv").open()))
 qs = sorted(J.glob("queue_*.json"))
 queue = json.loads(qs[-1].read_text()) if qs else []
+links = " ".join(a["link"] for a in apps)
+queue = [q for q in queue if not any(i in links for i in re.findall(r"[0-9a-f]{8}-[0-9a-f-]{27}|\d{7,}", q["url"]))]
 qdate = qs[-1].stem.split("_")[1] if qs else ""
 data = dict(apps=apps, queue=queue, queue_date=f"{qdate[:4]}-{qdate[4:6]}-{qdate[6:]}" if qdate else "",
             generated=dt.datetime.now().strftime("%Y-%m-%d %H:%M"))
