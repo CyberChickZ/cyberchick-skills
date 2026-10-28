@@ -34,4 +34,4 @@ CLI 只在等待授权时会提示，很多"要用户动手"的时刻不会推�
 - 若宿主有 `PushNotification` 工具（可推到手机），可同时调用；本脚本保证 Mac 桌面一定收到。
 
 ## 依赖
-`brew install terminal-notifier`（缺失时自动退回 osascript，但点击无法跳转）。2/3 级首次运行用 `swiftc` 编译到 `~/.cache/mac-notify/`（约 5 秒，需 Xcode CLT）；3 级晃动需要终端有"屏幕录制"权限，没有则只有流光和闪白。首次运行需在 系统设置 → 通知 里允许 terminal-notifier。
+需要 Xcode Command Line Tools（`swiftc`）。首次运行会在 `~/.cache/mac-notify/` 编译一个带 Claude 图标的小通知 app（图标从本机 `/Applications/Claude.app` 拷贝，没装则用默认图标），约 5 秒；系统会弹一次"允许 Claude 发送通知"，点允许。编译失败时退回 osascript。3 级晃动需要终端有"屏幕录制"权限，没有则只有流光和闪白。

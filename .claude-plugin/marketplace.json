@@ -45,7 +45,7 @@
     {
       "name": "mac-notify",
       "source": "./plugins/mac-notify",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "description": "需要你动手时推提醒，三级强度：通知 / 屏幕边缘流光 / 晃屏+闪白。"
     }
   ]
