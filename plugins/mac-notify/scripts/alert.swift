@@ -106,16 +106,19 @@ final class ClickView: NSVisualEffectView {
 
 func card(width: CGFloat, height: CGFloat) -> ClickView {
     let fx = ClickView(frame: CGRect(x: 0, y: 0, width: width, height: height))
-    fx.material = .hudWindow
-    fx.blendingMode = .withinWindow
+    fx.material = .popover
+    fx.blendingMode = .behindWindow
     fx.state = .active
-    fx.appearance = NSAppearance(named: .vibrantDark)
-    fx.wantsLayer = true
-    fx.layer?.cornerRadius = 22
-    fx.layer?.cornerCurve = .continuous
-    fx.layer?.masksToBounds = true
-    fx.layer?.borderWidth = 0.5
-    fx.layer?.borderColor = NSColor(white: 1, alpha: 0.18).cgColor
+    // 苹果推荐的圆角方式：maskImage 同时裁剪模糊背景，不会露出方角
+    let r: CGFloat = 18
+    let mask = NSImage(size: NSSize(width: r * 2 + 1, height: r * 2 + 1), flipped: false) { rect in
+        NSColor.black.setFill()
+        NSBezierPath(roundedRect: rect, xRadius: r, yRadius: r).fill()
+        return true
+    }
+    mask.capInsets = NSEdgeInsets(top: r, left: r, bottom: r, right: r)
+    mask.resizingMode = .stretch
+    fx.maskImage = mask
 
     let icon = NSImageView(frame: CGRect(x: 20, y: (height - 34) / 2, width: 34, height: 34))
     let symbol = urgent ? "exclamationmark.triangle.fill" : "hand.raised.fill"
@@ -125,11 +128,11 @@ func card(width: CGFloat, height: CGFloat) -> ClickView {
 
     let textX: CGFloat = 70
     let titleLabel = NSTextField(labelWithString: title)
-    titleLabel.font = .systemFont(ofSize: 17, weight: .semibold)
-    titleLabel.textColor = .white
+    titleLabel.font = .systemFont(ofSize: 15, weight: .semibold)
+    titleLabel.textColor = .labelColor
     let body = NSTextField(wrappingLabelWithString: message)
-    body.font = .systemFont(ofSize: 14, weight: .regular)
-    body.textColor = NSColor(white: 1, alpha: 0.78)
+    body.font = .systemFont(ofSize: 13, weight: .regular)
+    body.textColor = .secondaryLabelColor
     body.maximumNumberOfLines = 2
     if message.isEmpty {
         titleLabel.frame = CGRect(x: textX, y: (height - 22) / 2, width: width - textX - 20, height: 22)
@@ -213,7 +216,7 @@ if let main = NSScreen.screens.first {
     let panel = NSPanel(contentRect: rect, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
     panel.isOpaque = false
     panel.backgroundColor = .clear
-    panel.hasShadow = false
+    panel.hasShadow = true
     panel.level = NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue + 1)
     panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
     let view = card(width: width, height: height)
