@@ -1,7 +1,8 @@
 #!/bin/bash
-# usage: focus.sh <url> <iterm-session-uuid> <tty> <bundle-id>
+# usage: focus.sh <url> <iterm-session-uuid> <tty> <bundle-id> [session]
 # 依次尝试：URL → iTerm2 会话 UUID → tty 匹配 iTerm2/Terminal 的 tab → 激活来源 app → 激活正在运行的终端
 url="$1" uuid="$2" tty="$3" bundle="$4"
+[ -n "$5" ] && "$(dirname "$0")/remind.sh" --cancel "$5"
 
 [ -n "$url" ] && open "$url" && exit 0
 

@@ -1,5 +1,5 @@
 {
-  "description": "Claude Code 等待授权/输入时推 macOS 通知",
+  "description": "等待授权时推通知；用户发消息时取消本会话的待发提醒",
   "hooks": {
     "Notification": [
       {
@@ -7,6 +7,16 @@
           {
             "type": "command",
             "command": "msg=$(python3 -c 'import sys,json; print(json.load(sys.stdin).get(\"message\",\"Claude 在等你\"))'); \"${CLAUDE_PLUGIN_ROOT}/scripts/notify.sh\" \"$msg\" \"Claude 需要你\""
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/remind.sh\" --cancel \"$(python3 -c 'import sys,json; print(json.load(sys.stdin).get(\"session_id\",\"default\"))')\""
           }
         ]
       }

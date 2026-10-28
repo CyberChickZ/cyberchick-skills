@@ -45,8 +45,8 @@
     {
       "name": "mac-notify",
       "source": "./plugins/mac-notify",
-      "version": "0.4.0",
-      "description": "需要你动手时推提醒，三级强度：通知 / 屏幕边缘流光 / 晃屏+闪白。"
+      "version": "0.5.0",
+      "description": "有时效的待你操作（输密码、登录、授权）时设提醒：可延迟、可自动升级（通知→边缘闪光→晃屏），你回消息或点通知即取消。"
     }
   ]
 }
