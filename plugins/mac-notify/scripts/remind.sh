@@ -19,6 +19,12 @@ cancel() {
 
 if [ "$1" = "--cancel" ]; then
   cancel "${2:-${CLAUDE_CODE_SESSION_ID:-default}}"
+  cache="${XDG_CACHE_HOME:-$HOME/.cache}/mac-notify"
+  pkill -f "$cache/alert-" 2>/dev/null
+  if [ -f "$cache/delivered" ]; then
+    rm -f "$cache/delivered"
+    open -n -g "$cache/Claude Notify.app" --args --clear 2>/dev/null
+  fi
   exit 0
 fi
 

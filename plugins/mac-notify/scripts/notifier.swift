@@ -9,6 +9,11 @@ final class Delegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterD
     func applicationDidFinishLaunching(_ n: Notification) {
         let center = UNUserNotificationCenter.current()
         center.delegate = self
+        if arg(1) == "--clear" {
+            center.removeAllDeliveredNotifications()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { exit(0) }
+            return
+        }
         if args.count < 4 { return }
         center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
             guard granted else { exit(1) }

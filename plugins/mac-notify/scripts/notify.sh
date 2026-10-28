@@ -1,6 +1,17 @@
 #!/bin/bash
 # usage: notify.sh [-l 1|2|3] [-n count] <message> [title] [open-url]
-level=1 count=3
+# 用户偏好：~/.config/mac-notify/config（FLASH_COUNT、CARD_SECONDS）
+conf="${XDG_CONFIG_HOME:-$HOME/.config}/mac-notify/config"
+if [ ! -f "$conf" ]; then
+  mkdir -p "$(dirname "$conf")"
+  cat >"$conf" <<'CONF'
+# mac-notify 用户设置（改完立即生效）
+FLASH_COUNT=4     # 2/3 级屏幕边缘闪烁次数
+CARD_SECONDS=15   # 顶部提醒卡片常驻秒数（点击卡片或通知即关闭并跳回终端）
+CONF
+fi
+. "$conf"
+level=1 count=${FLASH_COUNT:-4}
 while getopts "l:n:" o; do case $o in l) level=$OPTARG ;; n) count=$OPTARG ;; esac; done
 shift $((OPTIND - 1))
 msg="${1:?message required}"
@@ -50,6 +61,7 @@ case "$TERM_PROGRAM" in iTerm.app) bundle="${bundle:-com.googlecode.iterm2}" ;; 
 
 if [ -x "$appbin" ]; then
   open -n -g "$appdir" --args "${title:-Claude Code}" "$sub" "$msg" "$dir/focus.sh" "$url" "$uuid" "$tty" "$bundle" "${MAC_NOTIFY_SESSION:-$CLAUDE_CODE_SESSION_ID}"
+  touch "$cache/delivered"
 else
   osascript -e 'on run a' -e 'display notification (item 1 of a) with title (item 2 of a) subtitle (item 3 of a) sound name "Glass"' -e 'end run' "$msg" "${title:-Claude Code}" "$sub"
 fi
@@ -58,4 +70,4 @@ fi
 bin="$cache/alert-$(shasum "$dir/alert.swift" | cut -c1-12)"
 build alert.swift "$bin" || exit 0
 [ "$level" -ge 3 ] && afplay /System/Library/Sounds/Sosumi.aiff &
-nohup "$bin" "$level" "$count" "$msg" "$title" >/dev/null 2>&1 &
+nohup "$bin" "$level" "$count" "$msg" "$title" "${CARD_SECONDS:-15}" "$dir/focus.sh" "$url" "$uuid" "$tty" "$bundle" "${MAC_NOTIFY_SESSION:-$CLAUDE_CODE_SESSION_ID}" >/dev/null 2>&1 &

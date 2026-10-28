@@ -1,4 +1,4 @@
-// usage: alert <level 2|3> <count> [message] [title]
+// usage: alert <level 2|3> <count> <message> <title> <card-seconds> [focus-script focus-args...]
 import AppKit
 import QuartzCore
 import CoreImage
@@ -8,6 +8,8 @@ let level = args.count > 1 ? Int(args[1]) ?? 2 : 2
 let count = max(1, args.count > 2 ? Int(args[2]) ?? 3 : 3)
 let message = args.count > 3 ? args[3] : ""
 let title = args.count > 4 && !args[4].isEmpty ? args[4] : (level >= 3 ? "需要你立刻处理" : "需要你操作")
+let cardSeconds = args.count > 5 ? Double(args[5]) ?? 15 : 15
+let focusCmd = Array(args.dropFirst(6))
 let urgent = level >= 3
 let period = urgent ? 0.9 : 1.6
 let total = period * Double(count)
@@ -96,10 +98,14 @@ func blurredRing(_ size: CGSize, radius: CGFloat) -> CGImage? {
     return CIContext().createCGImage(out, from: out.extent)
 }
 
-func card(in frame: CGRect, scale: CGFloat) -> NSView {
-    let width: CGFloat = min(560, frame.width - 80)
-    let height: CGFloat = message.isEmpty ? 64 : 92
-    let fx = NSVisualEffectView(frame: CGRect(x: (frame.width - width) / 2, y: frame.height - height - 64, width: width, height: height))
+final class ClickView: NSVisualEffectView {
+    var onClick: () -> Void = {}
+    override func mouseDown(with event: NSEvent) { onClick() }
+    override func resetCursorRects() { addCursorRect(bounds, cursor: .pointingHand) }
+}
+
+func card(width: CGFloat, height: CGFloat) -> ClickView {
+    let fx = ClickView(frame: CGRect(x: 0, y: 0, width: width, height: height))
     fx.material = .hudWindow
     fx.blendingMode = .withinWindow
     fx.state = .active
@@ -188,15 +194,44 @@ for (i, screen) in NSScreen.screens.enumerated() {
     root.addSublayer(glow)
     glow.add(breathe(from: 0.45, to: 1), forKey: "breathe")
 
-    view.addSubview(card(in: frame, scale: screen.backingScaleFactor))
     w.orderFrontRegardless()
     windows.append(w)
 }
 
-DispatchQueue.main.asyncAfter(deadline: .now() + total) {
+func fadeOut(_ ws: [NSWindow], then: @escaping () -> Void = {}) {
     NSAnimationContext.runAnimationGroup({ c in
         c.duration = 0.4
-        windows.forEach { $0.animator().alphaValue = 0 }
-    }, completionHandler: { app.terminate(nil) })
+        ws.forEach { $0.animator().alphaValue = 0 }
+    }, completionHandler: { ws.forEach { $0.orderOut(nil) }; then() })
 }
+
+// 卡片只放主屏，可点击：点了切回对应终端 tab；独立于闪光，常驻 cardSeconds
+if let main = NSScreen.screens.first {
+    let width: CGFloat = min(560, main.frame.width - 80)
+    let height: CGFloat = message.isEmpty ? 64 : 92
+    let rect = CGRect(x: main.frame.midX - width / 2, y: main.visibleFrame.maxY - height - 16, width: width, height: height)
+    let panel = NSPanel(contentRect: rect, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+    panel.isOpaque = false
+    panel.backgroundColor = .clear
+    panel.hasShadow = false
+    panel.level = NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue + 1)
+    panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+    let view = card(width: width, height: height)
+    view.onClick = {
+        if let script = focusCmd.first {
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: "/bin/bash")
+            p.arguments = [script] + focusCmd.dropFirst()
+            try? p.run()
+        }
+        fadeOut(windows + [panel]) { app.terminate(nil) }
+    }
+    panel.contentView = view
+    panel.orderFrontRegardless()
+    DispatchQueue.main.asyncAfter(deadline: .now() + max(total, cardSeconds)) {
+        fadeOut([panel]) { app.terminate(nil) }
+    }
+}
+
+DispatchQueue.main.asyncAfter(deadline: .now() + total) { fadeOut(windows) }
 app.run()
