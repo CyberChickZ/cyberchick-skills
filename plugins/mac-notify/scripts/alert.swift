@@ -215,6 +215,42 @@ for (i, screen) in NSScreen.screens.enumerated() {
     windows.append(w)
 }
 
+// 苹果式进出场：从顶部下滑弹入，结束时向上收缩退回
+func slideIn(_ w: NSWindow) {
+    let end = w.frame
+    w.setFrame(end.offsetBy(dx: 0, dy: end.height * 0.6), display: false)
+    w.alphaValue = 0
+    w.orderFrontRegardless()
+    NSAnimationContext.runAnimationGroup { c in
+        c.duration = 0.45
+        c.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 1.25, 0.4, 1)
+        w.animator().setFrame(end, display: true)
+        w.animator().alphaValue = 1
+    }
+}
+
+func retract(_ w: NSWindow, then: @escaping () -> Void) {
+    if let layer = w.contentView?.layer {
+        let b = layer.bounds
+        let scale = CABasicAnimation(keyPath: "sublayerTransform")
+        var t = CATransform3DMakeTranslation(b.midX, b.maxY, 0)
+        t = CATransform3DScale(t, 0.86, 0.86, 1)
+        t = CATransform3DTranslate(t, -b.midX, -b.maxY, 0)
+        scale.toValue = NSValue(caTransform3D: t)
+        scale.duration = 0.32
+        scale.timingFunction = CAMediaTimingFunction(controlPoints: 0.4, 0, 0.9, 0.6)
+        scale.fillMode = .forwards
+        scale.isRemovedOnCompletion = false
+        layer.add(scale, forKey: "shrink")
+    }
+    NSAnimationContext.runAnimationGroup({ c in
+        c.duration = 0.32
+        c.timingFunction = CAMediaTimingFunction(controlPoints: 0.4, 0, 0.9, 0.6)
+        w.animator().setFrameOrigin(NSPoint(x: w.frame.minX, y: w.frame.minY + w.frame.height * 0.45))
+        w.animator().alphaValue = 0
+    }, completionHandler: { w.orderOut(nil); then() })
+}
+
 func fadeOut(_ ws: [NSWindow], then: @escaping () -> Void = {}) {
     NSAnimationContext.runAnimationGroup({ c in
         c.duration = 0.4
@@ -266,12 +302,13 @@ if let main = NSScreen.screens.first {
             p.arguments = [script] + focusCmd.dropFirst()
             try? p.run()
         }
-        fadeOut(windows + [panel]) { app.terminate(nil) }
+        fadeOut(windows)
+        retract(panel) { app.terminate(nil) }
     }
     panel.contentView = host
-    panel.orderFrontRegardless()
+    slideIn(panel)
     DispatchQueue.main.asyncAfter(deadline: .now() + max(total, cardSeconds)) {
-        fadeOut([panel]) { app.terminate(nil) }
+        retract(panel) { app.terminate(nil) }
     }
 }
 
