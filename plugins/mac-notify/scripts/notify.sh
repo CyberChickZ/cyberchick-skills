@@ -64,6 +64,13 @@ case "$TERM_PROGRAM" in iTerm.app) bundle="${bundle:-com.googlecode.iterm2}" ;; 
 if [ -x "$appbin" ]; then
   open -n -g --env "NOTIFY_SECONDS=${NOTIFY_SECONDS:-15}" "$appdir" --args "${title:-Claude Code}" "$sub" "$msg" "$dir/focus.sh" "$url" "$uuid" "$tty" "$bundle" "${MAC_NOTIFY_SESSION:-$CLAUDE_CODE_SESSION_ID}"
   touch "$cache/delivered"
+  sess="${MAC_NOTIFY_SESSION:-$CLAUDE_CODE_SESSION_ID}"
+  if [ -n "$sess" ] && { [ -n "$uuid" ] || [ -n "$tty" ]; }; then
+    pend="$cache/pending"; mkdir -p "$pend"
+    for f in "$pend/$sess".w*; do [ -e "$f" ] && kill "${f##*.w}" 2>/dev/null; rm -f "$f"; done
+    nohup "$dir/watch.sh" "$sess" "$uuid" "$tty" >/dev/null 2>&1 </dev/null &
+    touch "$pend/$sess.w$!"
+  fi
 else
   osascript -e 'on run a' -e 'display notification (item 1 of a) with title (item 2 of a) subtitle (item 3 of a) sound name "Glass"' -e 'end run' "$msg" "${title:-Claude Code}" "$sub"
 fi

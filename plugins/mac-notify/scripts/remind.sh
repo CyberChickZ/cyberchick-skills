@@ -9,7 +9,7 @@ mkdir -p "$pending"
 cancel() {
   for f in "$pending/$1".*; do
     [ -e "$f" ] || continue
-    pid="${f##*.}"
+    pid="${f##*.}"; pid="${pid#w}"
     kids=$(pgrep -P "$pid")
     kill "$pid" 2>/dev/null
     [ -n "$kids" ] && kill $kids 2>/dev/null

@@ -14,12 +14,13 @@ let urgent = level >= 3
 let period = urgent ? 0.9 : 1.6
 let total = period * Double(count)
 
-let palette: [NSColor] = urgent
-    ? [.init(srgbRed: 1, green: 0.23, blue: 0.19, alpha: 1), .init(srgbRed: 1, green: 0.55, blue: 0.1, alpha: 1),
-       .init(srgbRed: 1, green: 0.18, blue: 0.45, alpha: 1), .init(srgbRed: 1, green: 0.23, blue: 0.19, alpha: 1)]
-    : [.init(srgbRed: 0.35, green: 0.55, blue: 1, alpha: 1), .init(srgbRed: 0.75, green: 0.4, blue: 1, alpha: 1),
-       .init(srgbRed: 1, green: 0.45, blue: 0.6, alpha: 1), .init(srgbRed: 1, green: 0.7, blue: 0.3, alpha: 1),
-       .init(srgbRed: 0.35, green: 0.55, blue: 1, alpha: 1)]
+// Apple Intelligence 边缘光配色；3 级换成暖红
+func hex(_ v: UInt32) -> NSColor {
+    NSColor(srgbRed: CGFloat((v >> 16) & 0xff) / 255, green: CGFloat((v >> 8) & 0xff) / 255, blue: CGFloat(v & 0xff) / 255, alpha: 1)
+}
+let palette: [NSColor] = (urgent
+    ? [0xFF2E54, 0xFF9004, 0xFF3B30, 0xFF6A3D, 0xFF2E54]
+    : [0x0894FF, 0xC959DD, 0xFF2E54, 0xFF9004, 0x0894FF]).map(hex)
 
 let app = NSApplication.shared
 app.setActivationPolicy(.accessory)
@@ -93,7 +94,7 @@ func blurredRing(_ size: CGSize, radius: CGFloat) -> CGImage? {
             .applyingGaussianBlur(sigma: Double(blur * k * boost))
             .cropped(to: CGRect(x: 0, y: 0, width: w, height: h))
     }
-    guard let wide = ring(140, 60, 0.75), let mid = ring(40, 16, 0.9), let core = ring(8, 3, 1) else { return nil }
+    guard let wide = ring(80, 34, 0.8), let mid = ring(22, 9, 1), let core = ring(5, 2, 1) else { return nil }
     let out = core.composited(over: mid.composited(over: wide))
     return CIContext().createCGImage(out, from: out.extent)
 }
@@ -104,8 +105,8 @@ final class ClickView: NSVisualEffectView {
     override func resetCursorRects() { addCursorRect(bounds, cursor: .pointingHand) }
 }
 
-func card(width: CGFloat, height: CGFloat) -> ClickView {
-    let fx = ClickView(frame: CGRect(x: 0, y: 0, width: width, height: height))
+func card(maxWidth: CGFloat) -> ClickView {
+    let fx = ClickView(frame: .zero)
     fx.material = .popover
     fx.blendingMode = .behindWindow
     fx.state = .active
@@ -135,13 +136,17 @@ func card(width: CGFloat, height: CGFloat) -> ClickView {
     body.maximumNumberOfLines = 2
 
     // 图标 + 文字作为一组，在卡片内水平、垂直都居中
-    let iconSize: CGFloat = 40, gap: CGFloat = 16, lineGap: CGFloat = 4
-    let maxText = width - 48 - iconSize - gap
+    let iconSize: CGFloat = 42, gap: CGFloat = 18, lineGap: CGFloat = 4
+    let padX: CGFloat = 30, padY: CGFloat = 22
+    let maxText = maxWidth - padX * 2 - iconSize - gap
     let tSize = titleLabel.sizeThatFits(NSSize(width: maxText, height: 100))
     body.preferredMaxLayoutWidth = maxText
     let bSize = message.isEmpty ? .zero : body.sizeThatFits(NSSize(width: maxText, height: 200))
     let textW = min(maxText, max(tSize.width, bSize.width))
     let textH = tSize.height + (message.isEmpty ? 0 : lineGap + bSize.height)
+    let width = ceil(max(460, padX * 2 + iconSize + gap + textW))
+    let height = ceil(max(iconSize, textH) + padY * 2)
+    fx.frame = CGRect(x: 0, y: 0, width: width, height: height)
     let x0 = (width - (iconSize + gap + textW)) / 2
     let y0 = (height - textH) / 2
     icon.frame = CGRect(x: x0, y: (height - iconSize) / 2, width: iconSize, height: iconSize)
@@ -219,16 +224,41 @@ func fadeOut(_ ws: [NSWindow], then: @escaping () -> Void = {}) {
 
 // 卡片只放主屏，可点击：点了切回对应终端 tab；独立于闪光，常驻 cardSeconds
 if let main = NSScreen.screens.first {
-    let width: CGFloat = min(680, main.frame.width - 80)
-    let height: CGFloat = message.isEmpty ? 76 : 112
-    let rect = CGRect(x: main.frame.midX - width / 2, y: main.visibleFrame.maxY - height - 16, width: width, height: height)
+    let view = card(maxWidth: min(680, main.frame.width - 80))
+    let width = view.frame.width, height = view.frame.height
+    let pad: CGFloat = 40 // 留给柔和阴影的透明边距
+    let rect = CGRect(x: main.frame.midX - width / 2 - pad, y: main.visibleFrame.maxY - height - 16 - pad,
+                      width: width + pad * 2, height: height + pad * 2)
     let panel = NSPanel(contentRect: rect, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
     panel.isOpaque = false
     panel.backgroundColor = .clear
-    panel.hasShadow = true
+    panel.hasShadow = false
     panel.level = NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue + 1)
     panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
-    let view = card(width: width, height: height)
+    view.frame.origin = CGPoint(x: pad, y: pad)
+    let host = NSView(frame: CGRect(origin: .zero, size: rect.size))
+    host.wantsLayer = true
+    let cardRect = view.frame
+    let shape = CGPath(roundedRect: cardRect, cornerWidth: 18, cornerHeight: 18, transform: nil)
+    let shadow = CAShapeLayer()
+    shadow.path = shape
+    shadow.fillColor = NSColor.black.withAlphaComponent(0.01).cgColor
+    shadow.shadowPath = shape
+    shadow.shadowColor = NSColor.black.cgColor
+    shadow.shadowOpacity = 0.18
+    shadow.shadowRadius = 24
+    shadow.shadowOffset = CGSize(width: 0, height: -8)
+    host.layer?.addSublayer(shadow)
+    host.addSubview(view)
+    let rim = CAShapeLayer()
+    rim.path = CGPath(roundedRect: cardRect.insetBy(dx: 0.5, dy: 0.5), cornerWidth: 17.5, cornerHeight: 17.5, transform: nil)
+    rim.fillColor = nil
+    rim.strokeColor = NSColor.white.withAlphaComponent(0.45).cgColor
+    rim.lineWidth = 1
+    let rimHost = NSView(frame: host.bounds)
+    rimHost.wantsLayer = true
+    rimHost.layer?.addSublayer(rim)
+    host.addSubview(rimHost)
     view.onClick = {
         if let script = focusCmd.first {
             let p = Process()
@@ -238,7 +268,7 @@ if let main = NSScreen.screens.first {
         }
         fadeOut(windows + [panel]) { app.terminate(nil) }
     }
-    panel.contentView = view
+    panel.contentView = host
     panel.orderFrontRegardless()
     DispatchQueue.main.asyncAfter(deadline: .now() + max(total, cardSeconds)) {
         fadeOut([panel]) { app.terminate(nil) }
