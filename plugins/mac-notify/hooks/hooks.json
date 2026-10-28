@@ -8,7 +8,8 @@
             "type": "command",
             "command": "msg=$(python3 -c 'import sys,json; print(json.load(sys.stdin).get(\"message\",\"Claude 在等你\"))'); \"${CLAUDE_PLUGIN_ROOT}/scripts/notify.sh\" \"$msg\" \"Claude 需要你\""
           }
-        ]
+        ],
+        "matcher": "permission_prompt|elicitation_dialog"
       }
     ],
     "UserPromptSubmit": [
