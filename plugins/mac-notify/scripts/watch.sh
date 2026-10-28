@@ -1,6 +1,6 @@
 #!/bin/bash
 # usage: watch.sh <session> <iterm-uuid> <tty>
-# 提醒未处理期间轮询：用户自己切回对应终端 tab（先离开过再回来）就清除通知和提醒。最长 2 小时后退出。
+# 从设提醒起轮询（覆盖延迟期和各级升级之间）：用户自己切回对应终端 tab（先离开过再回来）就清除通知和提醒。最长 2 小时后退出。
 session="$1" uuid="$2" tty="$3"
 dir="$(cd "$(dirname "$0")" && pwd)"
 

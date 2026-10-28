@@ -1,7 +1,7 @@
 #!/bin/bash
 # usage: remind.sh [-d 延迟秒] [-e] [-u url] "<要做的事>"
 #        remind.sh --cancel [session]
-# 每个会话同时只有一个提醒；用户下一次发消息或点击通知即自动取消。
+# 每个会话同时只有一个提醒；用户发消息、点击通知、或离开后切回本终端 tab（从设提醒起算）即自动取消。
 dir="$(cd "$(dirname "$0")" && pwd)"
 pending="${XDG_CACHE_HOME:-$HOME/.cache}/mac-notify/pending"
 mkdir -p "$pending"
@@ -47,3 +47,8 @@ DELAY=$delay ESCALATE=$escalate STAMP="$pending/$session" nohup bash -c '
 ' _ "$dir/notify.sh" "$msg" "" "$url" >/dev/null 2>&1 </dev/null &
 touch "$pending/$session.$!"
 echo "reminder set (session $session, pid $!)"
+. "$dir/ids.sh"
+if [ -n "$uuid" ] || [ -n "$tty" ]; then
+  nohup "$dir/watch.sh" "$session" "$uuid" "$tty" >/dev/null 2>&1 </dev/null &
+  touch "$pending/$session.w$!"
+fi

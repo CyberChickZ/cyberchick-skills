@@ -52,16 +52,7 @@ PLIST
   build notifier.swift "$appbin" && codesign -s - --force "$appdir" 2>/dev/null
 fi
 
-sid="${ITERM_SESSION_ID:-$TERM_SESSION_ID}"
-[[ "$sid" =~ ^w[0-9]+t[0-9]+p[0-9]+:(.+)$ ]] && uuid="${BASH_REMATCH[1]}"
-p=$$ tty=
-while [ "${p:-1}" -gt 1 ]; do
-  read -r pp t <<<"$(ps -o ppid=,tty= -p "$p")"
-  [ -n "$t" ] && [ "$t" != "??" ] && { tty="/dev/$t"; break; }
-  p=$pp
-done
-bundle="$__CFBundleIdentifier"
-case "$TERM_PROGRAM" in iTerm.app) bundle="${bundle:-com.googlecode.iterm2}" ;; Apple_Terminal) bundle="${bundle:-com.apple.Terminal}" ;; esac
+. "$dir/ids.sh"
 
 if [ -x "$appbin" ]; then
   hold=${NOTIFY_SECONDS:-15}; [ "$level" -ge 3 ] && hold=0
@@ -70,9 +61,12 @@ if [ -x "$appbin" ]; then
   sess="${MAC_NOTIFY_SESSION:-$CLAUDE_CODE_SESSION_ID}"
   if [ -n "$sess" ] && { [ -n "$uuid" ] || [ -n "$tty" ]; }; then
     pend="$cache/pending"; mkdir -p "$pend"
-    for f in "$pend/$sess".w*; do [ -e "$f" ] && kill "${f##*.w}" 2>/dev/null; rm -f "$f"; done
-    nohup "$dir/watch.sh" "$sess" "$uuid" "$tty" >/dev/null 2>&1 </dev/null &
-    touch "$pend/$sess.w$!"
+    alive=
+    for f in "$pend/$sess".w*; do [ -e "$f" ] && kill -0 "${f##*.w}" 2>/dev/null && alive=1; done
+    if [ -z "$alive" ]; then
+      nohup "$dir/watch.sh" "$sess" "$uuid" "$tty" >/dev/null 2>&1 </dev/null &
+      touch "$pend/$sess.w$!"
+    fi
   fi
 else
   osascript -e 'on run a' -e 'display notification (item 1 of a) with title (item 2 of a) subtitle (item 3 of a) sound name "Glass"' -e 'end run' "$msg" "${title:-Claude Code}" "$sub"
