@@ -31,13 +31,25 @@ if [ ! -x "$appbin" ]; then
 <key>CFBundleIconFile</key><string>AppIcon</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>LSUIElement</key><true/>
+<key>NSAppleEventsUsageDescription</key><string>点击通知时切回对应的终端窗口和标签页</string>
 </dict></plist>
 PLIST
   build notifier.swift "$appbin" && codesign -s - --force "$appdir" 2>/dev/null
 fi
 
+sid="${ITERM_SESSION_ID:-$TERM_SESSION_ID}"
+[[ "$sid" =~ ^w[0-9]+t[0-9]+p[0-9]+:(.+)$ ]] && uuid="${BASH_REMATCH[1]}"
+p=$$ tty=
+while [ "${p:-1}" -gt 1 ]; do
+  read -r pp t <<<"$(ps -o ppid=,tty= -p "$p")"
+  [ -n "$t" ] && [ "$t" != "??" ] && { tty="/dev/$t"; break; }
+  p=$pp
+done
+bundle="$__CFBundleIdentifier"
+case "$TERM_PROGRAM" in iTerm.app) bundle="${bundle:-com.googlecode.iterm2}" ;; Apple_Terminal) bundle="${bundle:-com.apple.Terminal}" ;; esac
+
 if [ -x "$appbin" ]; then
-  open -n -g "$appdir" --args "${title:-Claude Code}" "$sub" "$msg" "$url" "$__CFBundleIdentifier"
+  open -n -g "$appdir" --args "${title:-Claude Code}" "$sub" "$msg" "$dir/focus.sh" "$url" "$uuid" "$tty" "$bundle"
 else
   osascript -e 'on run a' -e 'display notification (item 1 of a) with title (item 2 of a) subtitle (item 3 of a) sound name "Glass"' -e 'end run' "$msg" "${title:-Claude Code}" "$sub"
 fi

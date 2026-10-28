@@ -1,4 +1,4 @@
-// usage: notifier <title> <subtitle> <message> [open-url] [activate-bundle-id]
+// usage: notifier <title> <subtitle> <message> [focus-script focus-args...]
 import AppKit
 import UserNotifications
 
@@ -17,7 +17,7 @@ final class Delegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterD
             c.subtitle = arg(2)
             c.body = arg(3)
             c.sound = UNNotificationSound(named: UNNotificationSoundName("Glass"))
-            c.userInfo = ["url": arg(4), "activate": arg(5)]
+            c.userInfo = ["focus": Array(args.dropFirst(4))]
             center.removeAllDeliveredNotifications()
             center.add(UNNotificationRequest(identifier: "latest", content: c, trigger: nil)) { _ in
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1) { exit(0) }
@@ -32,12 +32,12 @@ final class Delegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterD
 
     func userNotificationCenter(_ c: UNUserNotificationCenter, didReceive r: UNNotificationResponse,
                                 withCompletionHandler h: @escaping () -> Void) {
-        let info = r.notification.request.content.userInfo
-        if let u = info["url"] as? String, let url = URL(string: u), !u.isEmpty {
-            NSWorkspace.shared.open(url)
-        } else if let id = info["activate"] as? String, !id.isEmpty,
-                  let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id) {
-            NSWorkspace.shared.openApplication(at: app, configuration: .init())
+        if let focus = r.notification.request.content.userInfo["focus"] as? [String], let script = focus.first {
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: "/bin/bash")
+            p.arguments = [script] + focus.dropFirst()
+            try? p.run()
+            p.waitUntilExit()
         }
         h()
         exit(0)
