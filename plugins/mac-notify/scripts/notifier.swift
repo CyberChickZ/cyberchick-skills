@@ -18,7 +18,8 @@ final class Delegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterD
             c.body = arg(3)
             c.sound = UNNotificationSound(named: UNNotificationSoundName("Glass"))
             c.userInfo = ["url": arg(4), "activate": arg(5)]
-            center.add(UNNotificationRequest(identifier: UUID().uuidString, content: c, trigger: nil)) { _ in
+            center.removeAllDeliveredNotifications()
+            center.add(UNNotificationRequest(identifier: "latest", content: c, trigger: nil)) { _ in
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1) { exit(0) }
             }
         }

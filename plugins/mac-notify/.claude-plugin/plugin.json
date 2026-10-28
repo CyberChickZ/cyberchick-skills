@@ -1,6 +1,6 @@
 {
   "name": "mac-notify",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "让 agent 在需要你动手时（授权、决策、手动操作、长任务结束）推 macOS 系统通知；用自带的 Claude 图标通知 app。",
   "author": {
     "name": "CyberChickZ",
