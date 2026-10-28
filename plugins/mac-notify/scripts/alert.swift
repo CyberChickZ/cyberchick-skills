@@ -144,7 +144,7 @@ func card(maxWidth: CGFloat) -> ClickView {
     let bSize = message.isEmpty ? .zero : body.sizeThatFits(NSSize(width: maxText, height: 200))
     let textW = min(maxText, max(tSize.width, bSize.width))
     let textH = tSize.height + (message.isEmpty ? 0 : lineGap + bSize.height)
-    let width = ceil(max(460, padX * 2 + iconSize + gap + textW))
+    let width = ceil(max(300, padX * 2 + iconSize + gap + textW))
     let height = ceil(max(iconSize, textH) + padY * 2)
     fx.frame = CGRect(x: 0, y: 0, width: width, height: height)
     let x0 = (width - (iconSize + gap + textW)) / 2
