@@ -120,13 +120,12 @@ func card(width: CGFloat, height: CGFloat) -> ClickView {
     mask.resizingMode = .stretch
     fx.maskImage = mask
 
-    let icon = NSImageView(frame: CGRect(x: 22, y: (height - 40) / 2, width: 40, height: 40))
+    let icon = NSImageView()
     let symbol = urgent ? "exclamationmark.triangle.fill" : "hand.raised.fill"
     icon.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
         .withSymbolConfiguration(.init(pointSize: 30, weight: .semibold).applying(.init(paletteColors: [palette[0], palette[1]])))
     fx.addSubview(icon)
 
-    let textX: CGFloat = 80
     let titleLabel = NSTextField(labelWithString: title)
     titleLabel.font = .systemFont(ofSize: 20, weight: .semibold)
     titleLabel.textColor = .labelColor
@@ -134,11 +133,21 @@ func card(width: CGFloat, height: CGFloat) -> ClickView {
     body.font = .systemFont(ofSize: 17, weight: .regular)
     body.textColor = .secondaryLabelColor
     body.maximumNumberOfLines = 2
-    if message.isEmpty {
-        titleLabel.frame = CGRect(x: textX, y: (height - 28) / 2, width: width - textX - 20, height: 28)
-    } else {
-        titleLabel.frame = CGRect(x: textX, y: height - 48, width: width - textX - 20, height: 28)
-        body.frame = CGRect(x: textX, y: 16, width: width - textX - 20, height: 48)
+
+    // 图标 + 文字作为一组，在卡片内水平、垂直都居中
+    let iconSize: CGFloat = 40, gap: CGFloat = 16, lineGap: CGFloat = 4
+    let maxText = width - 48 - iconSize - gap
+    let tSize = titleLabel.sizeThatFits(NSSize(width: maxText, height: 100))
+    body.preferredMaxLayoutWidth = maxText
+    let bSize = message.isEmpty ? .zero : body.sizeThatFits(NSSize(width: maxText, height: 200))
+    let textW = min(maxText, max(tSize.width, bSize.width))
+    let textH = tSize.height + (message.isEmpty ? 0 : lineGap + bSize.height)
+    let x0 = (width - (iconSize + gap + textW)) / 2
+    let y0 = (height - textH) / 2
+    icon.frame = CGRect(x: x0, y: (height - iconSize) / 2, width: iconSize, height: iconSize)
+    titleLabel.frame = CGRect(x: x0 + iconSize + gap, y: y0 + textH - tSize.height, width: textW, height: tSize.height)
+    if !message.isEmpty {
+        body.frame = CGRect(x: x0 + iconSize + gap, y: y0, width: textW, height: bSize.height)
         fx.addSubview(body)
     }
     fx.addSubview(titleLabel)
