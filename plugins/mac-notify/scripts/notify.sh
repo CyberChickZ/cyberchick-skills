@@ -9,7 +9,7 @@ if [ ! -f "$conf" ]; then
 FLASH_COUNT_L2=2   # 2 级闪烁次数（每次 0.9 秒）
 FLASH_COUNT_L3=4   # 3 级闪烁次数（每次 0.9 秒）
 NOTIFY_SECONDS=15  # 1/2 级右上角系统通知停留秒数；0 = 一直保留（3 级始终常驻）
-CARD_SECONDS=0     # 顶部卡片停留秒数；0 = 跟闪烁一起结束
+CARD_SECONDS=8     # 顶部卡片停留秒数（从出现算起，闪烁结束后继续停留）；0 = 跟闪烁一起结束
 CONF
 fi
 . "$conf"
@@ -82,4 +82,4 @@ fi
 bin="$cache/alert-$(shasum "$dir/alert.swift" | cut -c1-12)"
 build alert.swift "$bin" || exit 0
 [ "$level" -ge 3 ] && afplay /System/Library/Sounds/Sosumi.aiff &
-nohup "$bin" "$level" "$count" "$msg" "$title" "${CARD_SECONDS:-0}" "$dir/focus.sh" "$url" "$uuid" "$tty" "$bundle" "${MAC_NOTIFY_SESSION:-$CLAUDE_CODE_SESSION_ID}" >/dev/null 2>&1 &
+nohup "$bin" "$level" "$count" "$msg" "$title" "${CARD_SECONDS:-8}" "$dir/focus.sh" "$url" "$uuid" "$tty" "$bundle" "${MAC_NOTIFY_SESSION:-$CLAUDE_CODE_SESSION_ID}" >/dev/null 2>&1 &
