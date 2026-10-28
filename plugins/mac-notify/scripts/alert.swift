@@ -11,7 +11,7 @@ let title = args.count > 4 && !args[4].isEmpty ? args[4] : (level >= 3 ? "需要
 let cardSeconds = args.count > 5 ? Double(args[5]) ?? 0 : 0
 let focusCmd = Array(args.dropFirst(6))
 let urgent = level >= 3
-let period = urgent ? 0.9 : 1.6
+let period = 1.2
 let total = period * Double(count)
 
 // Apple Intelligence 边缘光配色；3 级换成暖红

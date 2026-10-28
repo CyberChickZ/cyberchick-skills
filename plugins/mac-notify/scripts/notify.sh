@@ -7,7 +7,7 @@ if [ ! -f "$conf" ]; then
   cat >"$conf" <<'CONF'
 # mac-notify 用户设置（改完立即生效）
 FLASH_COUNT=4      # 2/3 级屏幕边缘闪烁次数
-NOTIFY_SECONDS=15  # 右上角系统通知停留秒数；0 = 一直保留直到点击/回复
+NOTIFY_SECONDS=15  # 1/2 级右上角系统通知停留秒数；0 = 一直保留（3 级始终常驻）
 CARD_SECONDS=0     # 顶部卡片停留秒数；0 = 跟闪烁一起结束
 CONF
 fi
@@ -62,7 +62,8 @@ bundle="$__CFBundleIdentifier"
 case "$TERM_PROGRAM" in iTerm.app) bundle="${bundle:-com.googlecode.iterm2}" ;; Apple_Terminal) bundle="${bundle:-com.apple.Terminal}" ;; esac
 
 if [ -x "$appbin" ]; then
-  open -n -g --env "NOTIFY_SECONDS=${NOTIFY_SECONDS:-15}" "$appdir" --args "${title:-Claude Code}" "$sub" "$msg" "$dir/focus.sh" "$url" "$uuid" "$tty" "$bundle" "${MAC_NOTIFY_SESSION:-$CLAUDE_CODE_SESSION_ID}"
+  hold=${NOTIFY_SECONDS:-15}; [ "$level" -ge 3 ] && hold=0
+  open -n -g --env "NOTIFY_SECONDS=$hold" "$appdir" --args "${title:-Claude Code}" "$sub" "$msg" "$dir/focus.sh" "$url" "$uuid" "$tty" "$bundle" "${MAC_NOTIFY_SESSION:-$CLAUDE_CODE_SESSION_ID}"
   touch "$cache/delivered"
   sess="${MAC_NOTIFY_SESSION:-$CLAUDE_CODE_SESSION_ID}"
   if [ -n "$sess" ] && { [ -n "$uuid" ] || [ -n "$tty" ]; }; then
