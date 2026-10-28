@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/remind.sh\" --cancel \"$(python3 -c 'import sys,json; print(json.load(sys.stdin).get(\"session_id\",\"default\"))')\""
+            "command": "s=\"$(python3 -c 'import sys,json; print(json.load(sys.stdin).get(\"session_id\",\"default\"))')\"; \"${CLAUDE_PLUGIN_ROOT}/scripts/mark.sh\" \"$s\"; \"${CLAUDE_PLUGIN_ROOT}/scripts/remind.sh\" --cancel \"$s\""
           }
         ]
       }

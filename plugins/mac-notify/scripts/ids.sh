@@ -10,3 +10,5 @@ while [ "${p:-1}" -gt 1 ]; do
 done
 bundle="$__CFBundleIdentifier"
 case "$TERM_PROGRAM" in iTerm.app) bundle="${bundle:-com.googlecode.iterm2}" ;; Apple_Terminal) bundle="${bundle:-com.apple.Terminal}" ;; esac
+mark="${XDG_CACHE_HOME:-$HOME/.cache}/mac-notify/tabs/${MAC_NOTIFY_SESSION:-$CLAUDE_CODE_SESSION_ID}"
+[ -f "$mark" ] && read -r bundle uuid tty <"$mark" && [ -z "$tty" ] && [[ "$uuid" == /dev/* ]] && tty="$uuid" uuid=
