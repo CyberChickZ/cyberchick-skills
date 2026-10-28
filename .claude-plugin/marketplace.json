@@ -41,6 +41,12 @@
       "source": "./plugins/cyberchick-hooks",
       "version": "0.1.0",
       "description": "个人 hooks：tool-ledger（记录输入和工具调用到 /tmp）、caffeinate（会话期间防休眠）"
+    },
+    {
+      "name": "mac-notify",
+      "source": "./plugins/mac-notify",
+      "version": "0.1.0",
+      "description": "需要你动手时（授权、决策、手动操作、长任务结束）推 macOS 通知，基于 terminal-notifier。"
     }
   ]
 }
