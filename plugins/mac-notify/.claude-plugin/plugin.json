@@ -1,6 +1,9 @@
 {
   "name": "mac-notify",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "让 agent 在需要你动手时（授权、决策、手动操作、长任务结束）推 macOS 系统通知；基于 terminal-notifier。",
-  "author": { "name": "CyberChickZ", "url": "https://github.com/CyberChickZ" }
+  "author": {
+    "name": "CyberChickZ",
+    "url": "https://github.com/CyberChickZ"
+  }
 }

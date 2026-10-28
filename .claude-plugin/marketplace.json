@@ -45,8 +45,8 @@
     {
       "name": "mac-notify",
       "source": "./plugins/mac-notify",
-      "version": "0.1.0",
-      "description": "需要你动手时（授权、决策、手动操作、长任务结束）推 macOS 通知，基于 terminal-notifier。"
+      "version": "0.2.0",
+      "description": "需要你动手时推提醒，三级强度：通知 / 屏幕边缘流光 / 晃屏+闪白。"
     }
   ]
 }
