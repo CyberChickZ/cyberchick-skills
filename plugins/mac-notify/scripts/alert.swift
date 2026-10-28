@@ -8,7 +8,7 @@ let level = args.count > 1 ? Int(args[1]) ?? 2 : 2
 let count = max(1, args.count > 2 ? Int(args[2]) ?? 3 : 3)
 let message = args.count > 3 ? args[3] : ""
 let title = args.count > 4 && !args[4].isEmpty ? args[4] : (level >= 3 ? "需要你立刻处理" : "需要你操作")
-let cardSeconds = args.count > 5 ? Double(args[5]) ?? 15 : 15
+let cardSeconds = args.count > 5 ? Double(args[5]) ?? 0 : 0
 let focusCmd = Array(args.dropFirst(6))
 let urgent = level >= 3
 let period = urgent ? 0.9 : 1.6

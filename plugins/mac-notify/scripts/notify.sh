@@ -6,8 +6,9 @@ if [ ! -f "$conf" ]; then
   mkdir -p "$(dirname "$conf")"
   cat >"$conf" <<'CONF'
 # mac-notify 用户设置（改完立即生效）
-FLASH_COUNT=4     # 2/3 级屏幕边缘闪烁次数
-CARD_SECONDS=15   # 顶部提醒卡片常驻秒数（点击卡片或通知即关闭并跳回终端）
+FLASH_COUNT=4      # 2/3 级屏幕边缘闪烁次数
+NOTIFY_SECONDS=15  # 右上角系统通知停留秒数；0 = 一直保留直到点击/回复
+CARD_SECONDS=0     # 顶部卡片停留秒数；0 = 跟闪烁一起结束
 CONF
 fi
 . "$conf"
@@ -35,7 +36,8 @@ if [ ! -x "$appbin" ]; then
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-<key>CFBundleIdentifier</key><string>com.cyberchick.mac-notify</string>
+<key>CFBundleIdentifier</key><string>com.cyberchick.mac-notify.persistent</string>
+<key>NSUserNotificationAlertStyle</key><string>alert</string>
 <key>CFBundleName</key><string>Claude</string>
 <key>CFBundleDisplayName</key><string>Claude</string>
 <key>CFBundleExecutable</key><string>$(basename "$appbin")</string>
@@ -60,7 +62,7 @@ bundle="$__CFBundleIdentifier"
 case "$TERM_PROGRAM" in iTerm.app) bundle="${bundle:-com.googlecode.iterm2}" ;; Apple_Terminal) bundle="${bundle:-com.apple.Terminal}" ;; esac
 
 if [ -x "$appbin" ]; then
-  open -n -g "$appdir" --args "${title:-Claude Code}" "$sub" "$msg" "$dir/focus.sh" "$url" "$uuid" "$tty" "$bundle" "${MAC_NOTIFY_SESSION:-$CLAUDE_CODE_SESSION_ID}"
+  open -n -g --env "NOTIFY_SECONDS=${NOTIFY_SECONDS:-15}" "$appdir" --args "${title:-Claude Code}" "$sub" "$msg" "$dir/focus.sh" "$url" "$uuid" "$tty" "$bundle" "${MAC_NOTIFY_SESSION:-$CLAUDE_CODE_SESSION_ID}"
   touch "$cache/delivered"
 else
   osascript -e 'on run a' -e 'display notification (item 1 of a) with title (item 2 of a) subtitle (item 3 of a) sound name "Glass"' -e 'end run' "$msg" "${title:-Claude Code}" "$sub"
@@ -70,4 +72,4 @@ fi
 bin="$cache/alert-$(shasum "$dir/alert.swift" | cut -c1-12)"
 build alert.swift "$bin" || exit 0
 [ "$level" -ge 3 ] && afplay /System/Library/Sounds/Sosumi.aiff &
-nohup "$bin" "$level" "$count" "$msg" "$title" "${CARD_SECONDS:-15}" "$dir/focus.sh" "$url" "$uuid" "$tty" "$bundle" "${MAC_NOTIFY_SESSION:-$CLAUDE_CODE_SESSION_ID}" >/dev/null 2>&1 &
+nohup "$bin" "$level" "$count" "$msg" "$title" "${CARD_SECONDS:-0}" "$dir/focus.sh" "$url" "$uuid" "$tty" "$bundle" "${MAC_NOTIFY_SESSION:-$CLAUDE_CODE_SESSION_ID}" >/dev/null 2>&1 &

@@ -16,4 +16,5 @@ description: 卡在用户亲自操作（输密码、2FA、浏览器登录/授权
 
 每个会话同时只保留一个提醒，新的覆盖旧的；不需要手动取消。
 
-闪烁次数、卡片常驻时长是用户偏好，写在 `~/.config/mac-notify/config`（`FLASH_COUNT`、`CARD_SECONDS`），不要在命令里传；用户要求时才帮他改这个文件。
+闪烁次数、卡片常驻时长是用户偏好，写在 `~/.config/mac-notify/config`（`FLASH_COUNT`、`NOTIFY_SECONDS`、`CARD_SECONDS`），不要在命令里传；用户要求时才帮他改这个文件。
+通知常驻依赖 系统设置 → 通知 → Claude → 横幅样式选「持续」（一次性设置，脚本控制 `NOTIFY_SECONDS` 后自动收起）。

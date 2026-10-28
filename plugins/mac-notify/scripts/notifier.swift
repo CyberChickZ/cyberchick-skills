@@ -25,7 +25,13 @@ final class Delegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterD
             c.userInfo = ["focus": Array(args.dropFirst(4))]
             center.removeAllDeliveredNotifications()
             center.add(UNNotificationRequest(identifier: "latest", content: c, trigger: nil)) { _ in
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1) { exit(0) }
+                // 持续样式下由我们控制停留时长；0 表示一直保留直到用户处理
+                let hold = Double(ProcessInfo.processInfo.environment["NOTIFY_SECONDS"] ?? "") ?? 15
+                if hold <= 0 { DispatchQueue.main.asyncAfter(deadline: .now() + 1) { exit(0) }; return }
+                DispatchQueue.main.asyncAfter(deadline: .now() + hold) {
+                    center.removeDeliveredNotifications(withIdentifiers: ["latest"])
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { exit(0) }
+                }
             }
         }
     }
@@ -53,5 +59,5 @@ let app = NSApplication.shared
 let delegate = Delegate()
 app.delegate = delegate
 app.setActivationPolicy(.accessory)
-DispatchQueue.main.asyncAfter(deadline: .now() + 30) { exit(0) }
+DispatchQueue.main.asyncAfter(deadline: .now() + 3600) { exit(0) }
 app.run()
