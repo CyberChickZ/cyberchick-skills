@@ -6,15 +6,17 @@ if [ ! -f "$conf" ]; then
   mkdir -p "$(dirname "$conf")"
   cat >"$conf" <<'CONF'
 # mac-notify 用户设置（改完立即生效）
-FLASH_COUNT=4      # 2/3 级屏幕边缘闪烁次数
+FLASH_COUNT_L2=2   # 2 级闪烁次数（每次 0.9 秒）
+FLASH_COUNT_L3=4   # 3 级闪烁次数（每次 0.9 秒）
 NOTIFY_SECONDS=15  # 1/2 级右上角系统通知停留秒数；0 = 一直保留（3 级始终常驻）
 CARD_SECONDS=0     # 顶部卡片停留秒数；0 = 跟闪烁一起结束
 CONF
 fi
 . "$conf"
-level=1 count=${FLASH_COUNT:-4}
+level=1 count=
 while getopts "l:n:" o; do case $o in l) level=$OPTARG ;; n) count=$OPTARG ;; esac; done
 shift $((OPTIND - 1))
+if [ -z "$count" ]; then [ "$level" -ge 3 ] && count=${FLASH_COUNT_L3:-4} || count=${FLASH_COUNT_L2:-2}; fi
 msg="${1:?message required}"
 title="$2"
 url="$3"

@@ -42,8 +42,8 @@ DELAY=$delay ESCALATE=$escalate STAMP="$pending/$session" nohup bash -c '
   sleep "$DELAY"
   "$n" -l 1 "$@"
   [ -n "$ESCALATE" ] || exit 0
-  sleep 120; "$n" -l 2 -n 3 "$@"
-  sleep 180; "$n" -l 3 -n 3 "$@"
+  sleep 120; "$n" -l 2 "$@"
+  sleep 180; "$n" -l 3 "$@"
 ' _ "$dir/notify.sh" "$msg" "" "$url" >/dev/null 2>&1 </dev/null &
 touch "$pending/$session.$!"
 echo "reminder set (session $session, pid $!)"
