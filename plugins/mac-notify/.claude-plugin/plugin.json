@@ -1,6 +1,6 @@
 {
   "name": "mac-notify",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "有时效的待你操作（输密码、登录、授权）时设提醒：可延迟、可自动升级（通知→边缘闪光→晃屏），你回消息或点通知即取消。",
   "author": {
     "name": "CyberChickZ",

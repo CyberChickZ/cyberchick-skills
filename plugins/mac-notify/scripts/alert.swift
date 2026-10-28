@@ -1,6 +1,7 @@
 // usage: alert <level 2|3> <count> [message] [title]
 import AppKit
 import QuartzCore
+import CoreImage
 
 let args = CommandLine.arguments
 let level = args.count > 1 ? Int(args[1]) ?? 2 : 2
@@ -66,17 +67,33 @@ func edgeGlow(_ bounds: CGRect, radius: CGFloat) -> CALayer {
 
     let mask = CALayer()
     mask.frame = bounds
-    let path = CGPath(roundedRect: bounds, cornerWidth: radius, cornerHeight: radius, transform: nil)
-    for (width, alpha) in [(160.0, 0.07), (100.0, 0.14), (60.0, 0.26), (32.0, 0.5), (14.0, 0.85), (6.0, 1.0)] {
-        let s = CAShapeLayer()
-        s.path = path
-        s.fillColor = nil
-        s.strokeColor = NSColor(white: 1, alpha: alpha).cgColor
-        s.lineWidth = width * (urgent ? 1.3 : 1)
-        mask.addSublayer(s)
-    }
+    mask.contents = blurredRing(bounds.size, radius: radius)
     container.mask = mask
     return container
+}
+
+// 屏幕边缘一圈白色描边经高斯模糊，得到从边缘向内平滑衰减的遮罩
+func blurredRing(_ size: CGSize, radius: CGFloat) -> CGImage? {
+    let k: CGFloat = 0.25
+    let w = Int(size.width * k), h = Int(size.height * k)
+    let boost: CGFloat = urgent ? 1.35 : 1
+    func ring(_ line: CGFloat, _ blur: CGFloat, _ alpha: CGFloat) -> CIImage? {
+        guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
+                                  space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        ctx.setStrokeColor(NSColor(white: 1, alpha: alpha).cgColor)
+        ctx.setLineWidth(line * k * boost)
+        ctx.addPath(CGPath(roundedRect: CGRect(x: 0, y: 0, width: w, height: h),
+                           cornerWidth: radius * k, cornerHeight: radius * k, transform: nil))
+        ctx.strokePath()
+        guard let img = ctx.makeImage() else { return nil }
+        return CIImage(cgImage: img).clampedToExtent()
+            .applyingGaussianBlur(sigma: Double(blur * k * boost))
+            .cropped(to: CGRect(x: 0, y: 0, width: w, height: h))
+    }
+    guard let wide = ring(140, 60, 0.75), let mid = ring(40, 16, 0.9), let core = ring(8, 3, 1) else { return nil }
+    let out = core.composited(over: mid.composited(over: wide))
+    return CIContext().createCGImage(out, from: out.extent)
 }
 
 func card(in frame: CGRect, scale: CGFloat) -> NSView {
