@@ -120,25 +120,25 @@ func card(width: CGFloat, height: CGFloat) -> ClickView {
     mask.resizingMode = .stretch
     fx.maskImage = mask
 
-    let icon = NSImageView(frame: CGRect(x: 20, y: (height - 34) / 2, width: 34, height: 34))
+    let icon = NSImageView(frame: CGRect(x: 22, y: (height - 40) / 2, width: 40, height: 40))
     let symbol = urgent ? "exclamationmark.triangle.fill" : "hand.raised.fill"
     icon.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
-        .withSymbolConfiguration(.init(pointSize: 26, weight: .semibold).applying(.init(paletteColors: [palette[0], palette[1]])))
+        .withSymbolConfiguration(.init(pointSize: 30, weight: .semibold).applying(.init(paletteColors: [palette[0], palette[1]])))
     fx.addSubview(icon)
 
-    let textX: CGFloat = 70
+    let textX: CGFloat = 80
     let titleLabel = NSTextField(labelWithString: title)
-    titleLabel.font = .systemFont(ofSize: 15, weight: .semibold)
+    titleLabel.font = .systemFont(ofSize: 20, weight: .semibold)
     titleLabel.textColor = .labelColor
     let body = NSTextField(wrappingLabelWithString: message)
-    body.font = .systemFont(ofSize: 13, weight: .regular)
+    body.font = .systemFont(ofSize: 17, weight: .regular)
     body.textColor = .secondaryLabelColor
     body.maximumNumberOfLines = 2
     if message.isEmpty {
-        titleLabel.frame = CGRect(x: textX, y: (height - 22) / 2, width: width - textX - 20, height: 22)
+        titleLabel.frame = CGRect(x: textX, y: (height - 28) / 2, width: width - textX - 20, height: 28)
     } else {
-        titleLabel.frame = CGRect(x: textX, y: height - 40, width: width - textX - 20, height: 22)
-        body.frame = CGRect(x: textX, y: 14, width: width - textX - 20, height: 40)
+        titleLabel.frame = CGRect(x: textX, y: height - 48, width: width - textX - 20, height: 28)
+        body.frame = CGRect(x: textX, y: 16, width: width - textX - 20, height: 48)
         fx.addSubview(body)
     }
     fx.addSubview(titleLabel)
@@ -210,8 +210,8 @@ func fadeOut(_ ws: [NSWindow], then: @escaping () -> Void = {}) {
 
 // 卡片只放主屏，可点击：点了切回对应终端 tab；独立于闪光，常驻 cardSeconds
 if let main = NSScreen.screens.first {
-    let width: CGFloat = min(560, main.frame.width - 80)
-    let height: CGFloat = message.isEmpty ? 64 : 92
+    let width: CGFloat = min(680, main.frame.width - 80)
+    let height: CGFloat = message.isEmpty ? 76 : 112
     let rect = CGRect(x: main.frame.midX - width / 2, y: main.visibleFrame.maxY - height - 16, width: width, height: height)
     let panel = NSPanel(contentRect: rect, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
     panel.isOpaque = false
